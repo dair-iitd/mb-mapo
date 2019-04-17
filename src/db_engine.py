@@ -5,21 +5,6 @@ import itertools
 
 from operator import itemgetter
 
-####
-# Currently supports:
-#  1) SELECT - > * and combination of field names
-#  2) WHERE -> equality comparision and combining conditions with boolean AND
-#  3) ORDER BY -> only supports single variable
-#
-# To extend support 
-#   1) update the regex pattern (self._pattern) that checks if a query is valid 
-#   2) update the execute() method
-#   3) update the QueryGenerator
-####
-
-TABLE_NAME = "table"
-SELECT_ALL_CLAUSE = "SELECT * FROM " + TABLE_NAME + " "
-
 class DbEngine(object):
 
 	KEY_INDEX = 0
@@ -35,6 +20,13 @@ class DbEngine(object):
 		self._populate_field_name_to_index_map()
 		self._read_db()
 		self._build_index()
+		if 'babi' in kb_file:
+			self._data_set = "babi"
+		elif 'camrest' in kb_file:
+			self._data_set = "camrest"
+		else:
+			print("ERROR: unknown kb file")
+			sys.exit()
 
 	@property
 	def fields(self):
@@ -79,11 +71,10 @@ class DbEngine(object):
 				rel = line_split[2]
 				value = line_split[3]
 				entities_set.add(value)
-				#if key != prev_key or record[self._field_name_to_index_map[rel]] != "":
-				if key != prev_key:
+				if key != prev_key or record[self._field_name_to_index_map[rel]] != "":
 					if record[0] != '':
 						self._db.append(copy.deepcopy(record))
-						#record=[""]*total_fields
+						record=[""]*total_fields
 					record[0]=key
 				record[self._field_name_to_index_map[rel]] = value
 
@@ -94,29 +85,10 @@ class DbEngine(object):
 		for entity in entities_set:
 			self._entities.append(entity)
 
-		field_names = ""
 		self._index_to_field_name_map={}
 		for key,value in self._field_name_to_index_map.items():
 			self._index_to_field_name_map[value]=key
-			if field_names == "":
-				field_names = "("+key
-			else:
-				field_names += "|"+key
-		field_names += ")"
 
-		select_clause_regex = "SELECT (\*|((" + field_names + ")( , " + field_names + ")*)) FROM " + TABLE_NAME
-		
-		where_condition_regex = field_names + ' [^( |(AND))]*'
-		where_clause_regex = " WHERE " + where_condition_regex +  "( AND " + where_condition_regex + ")*"
-		
-		order_by_condition_regex = field_names + ' (ASC|DESC)'
-		order_by_clause_regex = " ORDER BY " + order_by_condition_regex
-		
-		self._pattern = re.compile(
-								select_clause_regex
-								+ where_clause_regex
-								+ "(" + order_by_clause_regex + ")*" # ORDER BY is optional
-							)
 	def _build_index(self):
 		
 		self._inverted_index = {}
@@ -133,11 +105,19 @@ class DbEngine(object):
 					self._inverted_index[self._index_to_field_name_map[field_id]][value] = set([db_id])
 
 	def is_query_valid(self, query):
-		result = self._pattern.search(query)
-		if result != None and result.end() - result.start() == len(query):
-			return True
-		else:
+		
+		if not query.startswith("api_call "):
 			return False
+		
+		words = query.strip().split()
+		
+		if self._data_set == "babi" and len(words) == 5:
+			return True
+		
+		if self._data_set == "camrest" and len(words) == 4:
+			return True
+		
+		return False
 		
 	def execute(self, query):
 
@@ -146,17 +126,10 @@ class DbEngine(object):
 		result_entities_set = set([])
 
 		try:
-			select_clause = query[(query.index("SELECT ") + len("SELECT ")):query.index(" FROM")]
-			where_index = query.index(" WHERE ")
-			if "ORDER BY" in query:
-				order_by_index = query.index(" ORDER BY ")
-				where_clauses = query[where_index + len(" WHERE "):order_by_index].split("AND")
-			else:
-				where_clauses = query[where_index + len(" WHERE "):].split("AND")
-
-			record_set = None			
+			
+			record_set = None
+			where_clauses = self.get_where_clauses_from_api_call(query)
 			for where_clause in where_clauses:
-				#where_clause = where_clause.strip().replace("\"","")
 				where_clause_split = where_clause.strip().split(" ")
 				field_name = where_clause_split[0].strip()
 				value = where_clause_split[1].strip()
@@ -178,27 +151,6 @@ class DbEngine(object):
 			if record_set != None:
 				for index in record_set:
 					results.append(self._db[index])
-
-			'''
-			# sorted it based on the ORDER BY clause
-			# for now only one variable condition is allowed
-			if "ORDER BY" in query:
-				order_by_clause = query[order_by_index+ len(" ORDER BY "):]
-				order_by_clause_split = order_by_clause.split(" ")
-				sort_index = self._field_name_to_index_map[order_by_clause_split[0]]
-				reverse_flag = False
-				if len(order_by_clause_split) == 2 and order_by_clause_split[1] == "DESC":
-					reverse_flag = True
-				results = sorted(results, key=itemgetter(sort_index),reverse=reverse_flag)
-			
-			if select_clause != "*":
-				select_applied_results = []
-				select_fields = select_clause.split(" , ")
-				select_field_indices = [self._field_name_to_index_map[field] for field in select_fields]
-				for result in results:
-					select_applied_results.append([result[i] for i in select_field_indices])
-				results = select_applied_results
-			'''
 
 			# the entities are computed after applying the select clause	
 			for result in results:
@@ -230,35 +182,30 @@ class DbEngine(object):
 		elif condition in DbEngine.invalid_conditions:
 			return True
 		else:
-			_, results, _ = self.execute(SELECT_ALL_CLAUSE+ "WHERE " + condition)
+			condition_split = condition.strip().split(" ")
+			field_name = condition_split[0].strip()
+			value = condition_split[1].strip()
+
+			results=[]
+			if value in self._inverted_index[field_name]:
+				results = self._inverted_index[field_name][value]
 			if len(results) > 0:
 				DbEngine.valid_conditions.add(condition)
 				return False
 			else:
 				DbEngine.invalid_conditions.add(condition)
 				return True
-	
-	def get_query_in_api_format(self, query):
-		
-		if not self.is_query_valid(query):
-			return ''
-		
-		where_index = query.index(" WHERE ")
-		if "ORDER BY" in query:
-			order_by_index = query.index(" ORDER BY ")
-			where_clauses = query[where_index + len(" WHERE "):order_by_index].split("AND")
-		else:
-			where_clauses = query[where_index + len(" WHERE "):].split("AND")
-		
+
+	def get_api_call_from_where_clauses(self, where_clauses):
+
 		where_map = {}
 		for where_clause in where_clauses:
-			#where_clause = where_clause.strip().replace("\"","")
 			where_clause_split = where_clause.strip().split(" ")
 			field_name = where_clause_split[0].strip()
 			value = where_clause_split[1].strip()
 			where_map[field_name] = value
-		
-		if self.kb_file.endswith("camrest-kb-all.txt"):
+
+		if "camrest" in self.kb_file:
 			
 			# api_call dontcare east expensive
 			area = where_map["R_area"] if "R_area" in where_map.keys() else "dontcare"
@@ -267,18 +214,15 @@ class DbEngine(object):
 
 			api_call = "api_call " + food + " " + area + " " + pricerange 
 		
-		elif (self.kb_file.endswith("babi-kb-all.txt") or self.kb_file.endswith("babi-kb-task3.txt") or self.kb_file.endswith("babi-kb-task3-fabricated.txt")):
+		elif "babi" in self.kb_file:
 			
-			if "R_cuisine" not in where_map or "R_location" not in where_map or "R_number" not in where_map or "R_price" not in where_map:
-				api_call = ''
-			else:
-				# api_call japanese bangkok eight moderate
-				cuisine = where_map["R_cuisine"]
-				location = where_map["R_location"] 
-				number = where_map["R_number"]
-				price = where_map["R_price"]
-				
-				api_call = "api_call " + cuisine + " " + location + " " + number + " " + price
+			# api_call japanese bangkok eight moderate
+			cuisine = where_map["R_cuisine"] if "R_cuisine" in where_map.keys() else "dontcare"
+			location = where_map["R_location"] if "R_location" in where_map.keys() else "dontcare"
+			number = where_map["R_number"] if "R_number" in where_map.keys() else "dontcare"
+			price = where_map["R_price"] if "R_price" in where_map.keys() else "dontcare"
+			
+			api_call = "api_call " + cuisine + " " + location + " " + number + " " + price
 				
 		else:
 			print("ERROR: Unknown KB File in DbEngine")
@@ -286,40 +230,30 @@ class DbEngine(object):
 		
 		return api_call
 
-	def get_api_call_in_sql_query_format(self, api_call):
+	def get_where_clauses_from_api_call(self, api_call):
 
-		query = SELECT_ALL_CLAUSE + "WHERE "
 		where_clauses = []
-
-		if self.kb_file.endswith("camrest-kb-all.txt"):
+		api_call_arr = api_call.strip().split(" ") 
 			
-			api_call_arr = api_call.strip().split(" ") 
-			food = api_call_arr[1]
-			area = api_call_arr[2]
-			pricerange = api_call_arr[3]
-			if food != "dontcare": where_clauses.append('R_food ' + food)
-			if area != "dontcare": where_clauses.append('R_area ' + area)
-			if pricerange != "dontcare": where_clauses.append('R_pricerange ' + pricerange)
+		if "camrest" in self.kb_file:
+			
+			if api_call_arr[1] != "dontcare": where_clauses.append('R_food ' + api_call_arr[1])
+			if api_call_arr[2] != "dontcare": where_clauses.append('R_area ' + api_call_arr[2])
+			if api_call_arr[3] != "dontcare": where_clauses.append('R_pricerange ' + api_call_arr[3])
 		
-		elif (self.kb_file.endswith("babi-kb-all.txt") or self.kb_file.endswith("babi-kb-task3.txt") or self.kb_file.endswith("babi-kb-task3-fabricated.txt")):
+		elif "babi" in self.kb_file:
 			
-			api_call_arr = api_call.strip().split(" ")
-			where_clauses.append('R_cuisine ' + api_call_arr[1])
-			where_clauses.append('R_location ' + api_call_arr[2])
-			where_clauses.append('R_number ' + api_call_arr[3])
-			where_clauses.append('R_price ' + api_call_arr[4])
+			if api_call_arr[1] != "dontcare": where_clauses.append('R_cuisine ' + api_call_arr[1])
+			if api_call_arr[2] != "dontcare": where_clauses.append('R_location ' + api_call_arr[2])
+			if api_call_arr[3] != "dontcare": where_clauses.append('R_number ' + api_call_arr[3])
+			if api_call_arr[4] != "dontcare": where_clauses.append('R_price ' + api_call_arr[4])
 		
 		else:
 			
 			print("ERROR: Unknown KB File in DbEngine")
 			sys.exit(1)
 		
-		query += " AND ".join(where_clauses)
-
-		#print("api_call:", api_call)
-		#print("query   :", query)
-		
-		return query
+		return where_clauses
 
 class QueryGenerator(object):
 
@@ -327,7 +261,6 @@ class QueryGenerator(object):
 
 	def __init__(self, dbObject, useOrderBy=False):
 		self._dbObject = dbObject
-		self._select_clauses = self._get_select_clauses()
 		self._use_order_by = useOrderBy
 
 	def _get_permuatations_till_length_k(self, conditions, k):
@@ -344,22 +277,6 @@ class QueryGenerator(object):
 			combinations_till_k += copy.deepcopy(list(itertools.combinations(conditions, r)))
 		return combinations_till_k
 
-	def _get_select_clauses(self):
-
-		select_clauses = []
-		select_clauses.append(SELECT_ALL_CLAUSE)
-		return select_clauses
-		'''
-
-		field_names = self._dbObject.field_names
-		field_names.sort()
-		all_select_clauses_fields = self._get_combinations_till_length_k(field_names, len(field_names))
-		for select_clauses_fields in all_select_clauses_fields:
-			if "R_name" in select_clauses_fields:
-				select_clauses.append("SELECT " + " , ".join(select_clauses_fields) + " FROM " + TABLE_NAME + " ")
-		
-		return select_clauses
-		'''
 	def _get_conditions(self,entities):
 	
 		all_conditions = []
@@ -381,63 +298,48 @@ class QueryGenerator(object):
 			for entity_permutation in entity_permutations:
 				for field_name_combination in field_name_combinations:
 					assert len(entity_permutation) == len(field_name_combination)
-					conditions = ""
+					conditions = []
 					invalid_flag = False
 					for i in range(len(entity_permutation)):
-						if i > 0:
-							conditions += " AND "
-						#condition = (field_name_combination[i] + ' = " ' + entity_permutation[i] + ' "')
 						condition = (field_name_combination[i] + ' ' + entity_permutation[i])
 						if self._dbObject._is_invalid_condition(condition):
 							invalid_flag = True
 							break
 						else:
-							conditions += condition
+							conditions.append(condition)
 
 					if not invalid_flag:
 						all_conditions.append(conditions)
 		
-		# include order by statements
-		if self._use_order_by:
-			all_conditions_with_order_by = []
-			for i in range(len(all_conditions)):
-				conditions = all_conditions[i]
-				all_conditions_with_order_by.append(conditions)
-				for field_name in self._dbObject.field_names:
-					all_conditions_with_order_by.append(conditions + " ORDER  BY " + field_name + " ASC")
-					all_conditions_with_order_by.append(conditions + " ORDER  BY " + field_name + " DESC")
-			return all_conditions_with_order_by
-		else:
-			return all_conditions
+		return all_conditions
 
 	def get_high_recall_queries(self, input_entities, output_entities):
 		
 		high_recall_queries = []
 		output_entities_set = set(output_entities)
-		select_clauses = self._get_select_clauses()
-
+		
 		where_clauses = self._get_conditions(input_entities)
 		for where_clause in where_clauses:
-			for select_clause  in select_clauses:
-				query = select_clause + "WHERE " + where_clause
-				if query in QueryGenerator.Cache:
-					result_set = QueryGenerator.Cache[query]
-				else:
-					_, _, result_set = self._dbObject.execute(query)
-					QueryGenerator.Cache[query] = result_set
-				if len(result_set)>0:
-					if result_set.intersection(output_entities) == output_entities_set:
-						high_recall_queries.append(query)
+			query = self._dbObject.get_api_call_from_where_clauses(where_clause)
+			if query in QueryGenerator.Cache:
+				result_set = QueryGenerator.Cache[query]
+			else:
+				_, _, result_set = self._dbObject.execute(query)
+				QueryGenerator.Cache[query] = result_set
+			if len(result_set)>0:
+				if result_set.intersection(output_entities) == output_entities_set:
+					high_recall_queries.append(query)
 		return high_recall_queries
 
 if __name__ == "__main__":
 
-	kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-task3-fabricated.txt"
+	kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-all.txt"
 	babi_db = DbEngine(kb_file, "R_name")
 
-	query = 'SELECT * FROM table WHERE R_cuisine british AND R_location british AND R_price expensive'
+	query = 'api_call thai tokyo six cheap'
 	
 	print("Is Query Valid: ", babi_db.is_query_valid(query))
+	
 	if babi_db.is_query_valid(query):
 		select_fields, results, result_entities_set = babi_db.execute(query)
 		results = babi_db.get_formatted_results(select_fields, results)
@@ -447,8 +349,7 @@ if __name__ == "__main__":
 		print("\n-----------------------\n")
 	
 	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
-	input_entities=["rome", "italian", "moderate", "four"]
-	#output_entities=["resto_paris_moderate_french_6stars", "resto_paris_moderate_french_6stars_address"]
+	input_entities=["thai", "tokyo", "expensive"]
 	output_entities=[]
 	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities)
 

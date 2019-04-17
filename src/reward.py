@@ -168,14 +168,16 @@ def get_best_action_with_reward(queries, rl_idx, max_api_length, rl_oov_word_lis
 	
 def get_gt_action_with_results(api_call, rl_idx, max_api_length, rl_oov_word_list, total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog):
 	
-	query = db_engine.get_api_call_in_sql_query_format(api_call)
+	# the logical form and api_call are the same
+	query = api_call
 	_, select_fields, db_results = get_reward_and_results(db_engine, query, True, next_entities_in_dialog)
 	action, action_emb, action_size, reward = get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
 
 	return action, action_emb, action_size, reward, select_fields, db_results 
 
 def is_perfect_match(db_engine, api_call, sql_query):
-	sql_query_formatted = db_engine.get_query_in_api_format(sql_query)
+	# the logical form and api_call are the same
+	sql_query_formatted = sql_query
 	if api_call == sql_query_formatted:
 		return 1
 	else:

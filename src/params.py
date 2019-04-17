@@ -9,7 +9,7 @@ flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
 flags.DEFINE_integer("epochs", 4000, "Number of epochs to train for.")
 
 # Model Params
-flags.DEFINE_float("learning_rate", 0.0001, "Learning rate for Adam Optimizer.")
+flags.DEFINE_float("learning_rate", 0.01, "Learning rate for Adam Optimizer.")
 flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
 flags.DEFINE_integer("embedding_size", 64, "Embedding size for embedding matrices.")
@@ -29,7 +29,7 @@ flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss du
 flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
 flags.DEFINE_boolean("beam", False, "if True, uses beam search decoder")
 flags.DEFINE_boolean("sort", False, "if True, sort db results on rating")
-flags.DEFINE_boolean("constraint", True, "if True, perform constraint decoding")
+flags.DEFINE_boolean("constraint", False, "if True, perform constraint decoding")
 
 # RL Params
 flags.DEFINE_boolean("rl", True, 'if True, uses RL decoder')
@@ -53,6 +53,7 @@ flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory contain
 flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
 flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3-fabricated.txt", "kb file for this task")
+#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
 flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
 
 def get_params():
@@ -62,7 +63,9 @@ def print_params(logging, args):
 
 	if args.beam == False:
 			args.beam_width = 1
-		
+	
+	args.constraint == False
+
 	'''
 		Print important model parameters
 	'''

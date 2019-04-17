@@ -233,16 +233,15 @@ def get_rl_vocab(db_engine):
     fields = db_engine.fields
     #entities = db_engine.entities
 
-    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'SELECT', 'FROM', 'WHERE', 'AND', 'ORDER', 'BY', 'ASC', 'DESC', 'table']
-    vocab += ['*', '=', '"', '(', ')', ',']
+    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
     #rl_word_idx = dict((c, i + len(vocab)) for i, c in enumerate(fields + entities))
-    rl_word_idx = dict((c, i + len(vocab)) for i, c in enumerate(fields))
+    rl_word_idx = {}
     for i, val in enumerate(vocab):
         rl_word_idx[val] = i
     rl_idx_word = {v: k for k, v in rl_word_idx.items()}
     rl_vocab_size = len(rl_word_idx)
 
-
+    '''
     # MASK_FILE = 'masks.json'
     # TSV_FILE = 'transitions.tsv'
 
@@ -296,6 +295,10 @@ def get_rl_vocab(db_engine):
     # print(state_mask[:, 1])
 
     # print(rl_word_idx)
+    '''
+    constraint_mask = {}
+    state_mask = {}
+    
     return rl_word_idx, rl_idx_word, fields, rl_vocab_size, constraint_mask, state_mask
 
 ###################################################################################################
