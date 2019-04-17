@@ -419,11 +419,11 @@ class chatBot(object):
 if __name__ == '__main__': 
 
 	logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
-
+	
+	print_params(logging, args)
 	chatbot = chatBot()
 	print("CHATBOT READY"); sys.stdout.flush();
-	print_params(logging, args)
-
+	
 	chatbot.train() if args.train else chatbot.test()
 
 	chatbot.close_session()

@@ -121,8 +121,8 @@ def get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total
 			action.append(rl_idx[word])
 			action_emb.append(rl_idx[word])
 
-	action.append(rl_idx['EOS'])
-	action_emb.append(rl_idx['EOS'])
+	#action.append(rl_idx['EOS'])
+	#action_emb.append(rl_idx['EOS'])
 
 	action_size = len(action)
 

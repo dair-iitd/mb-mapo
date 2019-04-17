@@ -35,8 +35,7 @@ flags.DEFINE_boolean("constraint", False, "if True, perform constraint decoding"
 flags.DEFINE_boolean("rl", True, 'if True, uses RL decoder')
 flags.DEFINE_string("rl_mode", "GREEDY", 'takes the following values: GT, GREEDY, MAPO')
 flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action before decoding the action')
-flags.DEFINE_integer("max_api_length", 50, "Set the value based on DBEngine and QueryGenerator")
-
+flags.DEFINE_integer("max_api_length", 5, "Set the value based on DBEngine and QueryGenerator")
 # Output and Evaluation Specifications
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
 flags.DEFINE_boolean("bleu_score", True, 'if True, uses BLUE word score to compute best model')
@@ -65,6 +64,11 @@ def print_params(logging, args):
 			args.beam_width = 1
 	
 	args.constraint == False
+
+	if "babi" in args.kb_file:
+		args.max_api_length = 5
+	if "camrest" in args.kb_file:
+		args.max_api_length = 4
 
 	'''
 		Print important model parameters
