@@ -948,4 +948,4 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
     if self._output_attention:
       return attention, next_state
     else:
-      return (cell_output, line_alignments, word_alignments, hier_alignments, p_gens), next_state
+      return (cell_output, hier_alignments, p_gens), next_state

@@ -681,8 +681,10 @@ class BeamSearchDecoder(decoder.Decoder):
           # mask = tf.reshape(mask, [batch_size, decoder_vocab_size_n])
           # vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
           vocab_dists = tf.multiply(vocab_dists, mask)
-          vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
+          vocab_dists = tf.reshape(vocab_dists, [batch_size, decosder_vocab_size_n])
+          p_gens = tf.map_fn(one_minus_fn, p_gens)
         else:
+          p_gens = tf.Print(p_gens, [p_gens], 'printing p_gens', summarize=32)
           vocab_dists = tf.multiply(vocab_dists, p_gens)
           one_minus_fn = lambda x: 1 - x
           p_gens = tf.map_fn(one_minus_fn, p_gens)
@@ -732,6 +734,10 @@ class BeamSearchDecoder(decoder.Decoder):
           final_dists = math_ops.add(unk_removed_vocab_dists_extended, attn_dists_projected)
         else:
           final_dists = math_ops.add(vocab_dists_extended, attn_dists_projected)
+          # final_dists = tf.Print(final_dists, [final_dists], 'printing old_dists', summarize=1000)
+          first_part = final_dists[:,:1]
+          final_dists = tf.concat([tf.zeros_like(first_part), final_dists[:,1:]], 1)
+          final_dists = tf.Print(final_dists, [final_dists], 'printing final_dists', summarize=1000)
 
         return final_dists, vocab_dists_extended, next_state_ids
 
@@ -777,7 +783,7 @@ class BeamSearchDecoder(decoder.Decoder):
 
       # cell_outputs = tf.Print(cell_outputs, [cell_outputs], 'printing cell_outputs', summarize=1000)
 
-      beam_search_output, _, beam_search_state = _beam_search_step(
+      beam_search_output, next_ids, beam_search_state = _beam_search_step(
           time=time,
           logits=cell_outputs,
           next_cell_state=next_cell_state,
@@ -793,24 +799,25 @@ class BeamSearchDecoder(decoder.Decoder):
       # final_mask = tf.concat([mask_yes, mask_no], 2)
       # vocab_cell_outputs = tf.multiply(cell_outputs, final_mask)
 
-      _, next_ids, _ = _beam_search_step(
-          time=time,
-          logits=vocab_cell_outputs,
-          next_cell_state=next_cell_state,
-          beam_state=state,
-          batch_size=batch_size,
-          beam_width=beam_width,
-          end_token=end_token,
-          length_penalty_weight=length_penalty_weight)
+      if self._constraint_mask is not None:
+        _, next_ids, _ = _beam_search_step(
+            time=time,
+            logits=vocab_cell_outputs,
+            next_cell_state=next_cell_state,
+            beam_state=state,
+            batch_size=batch_size,
+            beam_width=beam_width,
+            end_token=end_token,
+            length_penalty_weight=length_penalty_weight)
 
       next_ids = tf.reshape(next_ids, [batch_size, beam_width])
-      #next_ids = tf.Print(next_ids, [next_ids], 'printing next_ids', summarize=256)
+      # next_ids = tf.Print(next_ids, [next_ids], 'printing next_ids', summarize=256)
       state_ids = tf.reshape(state_ids, [batch_size, beam_width])
       #state_ids = tf.Print(state_ids, [state_ids], 'printing state_ids', summarize=256)
 
       finished = beam_search_state.finished
       sample_ids = beam_search_output.predicted_ids
-      #sample_ids = tf.Print(sample_ids, [sample_ids], 'printing sample_ids', summarize=256)
+      sample_ids = tf.Print(sample_ids, [sample_ids], 'printing sample_ids', summarize=256)
       unked_tokens = self._cast_tokens(sample_ids)
       next_inputs = control_flow_ops.cond(
           math_ops.reduce_all(finished), lambda: self._start_inputs,

@@ -11,7 +11,7 @@ entities=set([])
 # set to babi or camrest
 dataset="babi"
 # for babi, set the task
-task=3
+task=5
 
 find_replace={}
 
@@ -386,8 +386,8 @@ if __name__ == "__main__":
 			input_prefix_no_api = 'dialog-babi-task3-options-'
 			input_prefix =  'dialog-babi-task3-options-with-api-'
 			output_folder = input_folder + "task3/"
-			#for file in files:
-			#	insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
+			for file in files:
+				insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
 			#kb_file = input_folder+'dialog-babi-kb-task3.txt'
 			kb_file = input_folder+'dialog-babi-kb-task3-fabricated.txt'
 		output_prefix = 'dialog-babi-'

@@ -14,7 +14,7 @@ flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
 flags.DEFINE_integer("embedding_size", 64, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
-flags.DEFINE_integer("beam_width", 4, "Width of Beam for BeamSearchDecoder")
+flags.DEFINE_integer("beam_width", 2, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 2, "Start Phase for RL training")
 
 # Entity Word Drop

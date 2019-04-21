@@ -398,7 +398,7 @@ class MemN2NGeneratorDialog(object):
 
 				## Run Decoder ##
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-				outputs,_,_,p_gens,_,_,_ = dynamic_decode(decoder, batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
+				outputs,p_gens = dynamic_decode(decoder, batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
 				
 				## Prepare Loss Helpers ##
 				final_dists = outputs.rnn_output
@@ -443,12 +443,12 @@ class MemN2NGeneratorDialog(object):
 				if self._beam:
 					tiled_oov_ids = tf.contrib.seq2seq.tile_batch(self._oov_ids, multiplier=self._beam_width)
 					decoder = self._get_beam_decoder(encoder_states, line_memory, word_memory, batch_size)				
-					outputs,_,_,_,_,_,_ = dynamic_decode(decoder, batch_size, self._decoder_vocab_size, self._oov_sizes, tiled_oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+					outputs,_ = dynamic_decode(decoder, batch_size, self._decoder_vocab_size, self._oov_sizes, tiled_oov_ids, maximum_iterations=2*self._candidate_sentence_size)
 					return outputs.parent_ids, outputs.predicted_ids
 				else:
 					helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
 					decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-					outputs,_,_,_,_,_,_= dynamic_decode(decoder, batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+					outputs,_ = dynamic_decode(decoder, batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
 					return tf.argmax(outputs.rnn_output, axis=-1)
 
 	###################################################################################################
@@ -491,7 +491,7 @@ class MemN2NGeneratorDialog(object):
 					# TODO: implement FLD with beam search
 					tiled_oov_ids = tf.contrib.seq2seq.tile_batch(self._rl_oov_ids, multiplier=self._beam_width)
 					decoder = self._get_rl_beam_decoder(encoder_states, line_memory, word_memory, batch_size)
-					outputs,_,_,_,_,_,_ = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, tiled_oov_ids, maximum_iterations=self._max_api_length)
+					outputs,_ = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, tiled_oov_ids, maximum_iterations=self._max_api_length)
 					return outputs.parent_ids, outputs.predicted_ids
 				else:
 					if self._fixed_length_decode:
@@ -499,7 +499,7 @@ class MemN2NGeneratorDialog(object):
 					else:
 						helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
 					decoder = self._get_rl_decoder(encoder_states, line_memory, word_memory, helper, batch_size, predict_flag=True)
-					outputs,_,_,_,_,_,_= dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, self._rl_oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+					outputs,_ = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, self._rl_oov_ids, maximum_iterations=2*self._candidate_sentence_size)
 					return tf.argmax(outputs.rnn_output, axis=-1), predicted_lengths_to_return
 
 	def _decoder_train_rl(self, encoder_states, line_memory, word_memory=None):
@@ -526,7 +526,7 @@ class MemN2NGeneratorDialog(object):
 					answer_sizes = tf.subtract(answer_sizes, tf.ones_like(answer_sizes))
 				helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 				decoder = self._get_rl_decoder(encoder_states, line_memory, word_memory, helper, batch_size,predict_flag=False)
-				outputs,_,_,p_gens,_,_,_ = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, self._rl_oov_ids, impute_finished=False)
+				outputs,p_gens = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, self._rl_oov_ids, impute_finished=False)
 				final_dists = outputs.rnn_output
 				max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
 				ans = self._rl_actions[:, :max_length]
@@ -588,7 +588,7 @@ class MemN2NGeneratorDialog(object):
 
 				helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 				decoder = self._get_rl_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-				outputs,_,_,p_gens,_,_,_ = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, self._rl_oov_ids, impute_finished=False)
+				outputs,p_gens = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, self._rl_oov_ids, impute_finished=False)
 				final_dists = outputs.rnn_output
 				max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
 				ans = self._rl_actions[:, :max_length]

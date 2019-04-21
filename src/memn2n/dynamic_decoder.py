@@ -147,6 +147,10 @@ class BasicDecoder(Decoder):
 				vocab_dists = tf.nn.softmax(next_outputs.rnn_output)
 
 				next_state_ids = state_ids
+
+				# oov_ids_n = tf.Print(oov_ids_n, [oov_ids_n], 'printing oov_ids', summarize=1000)
+				# oov_sizes_n = tf.Print(oov_sizes_n, [oov_sizes_n], 'printing oov_sizes', summarize=1000)
+				# decoder_vocab_size_n = tf.Print(decoder_vocab_size_n, [decoder_vocab_size_n], 'printing oov_sizes', summarize=1000)
 				if self._constraint_mask is not None:
 					# prev_ids = prev_outputs.sample_ids
 					# prev_ids = tf.Print(prev_ids, [prev_ids], 'printing sample_ids', summarize=32)
@@ -168,6 +172,7 @@ class BasicDecoder(Decoder):
 					# vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
 					vocab_dists = tf.multiply(vocab_dists, mask)
 					vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
+					p_gens = tf.map_fn(one_minus_fn, p_gens)
 
 				# raise ValueError("Expected memory to have fully defined inner dims, "
 				#                  "but saw shape: %s" % (vocab_dists.get_shape()))
@@ -257,7 +262,7 @@ class BasicDecoder(Decoder):
 		with ops.name_scope(name, "BasicDecoderStep", (time, inputs, state)):
 			# inputs = tf.Print(inputs, [inputs], 'printing inputs', summarize=1000)
 			cell_outputs, cell_state = self._cell(inputs, state)
-			(cell_outputs, line_alignments, word_alignments, attention, p_gens) = cell_outputs
+			(cell_outputs, attention, p_gens) = cell_outputs
 			if self._output_layer is not None:
 				cell_outputs = self._output_layer(cell_outputs)
 			sample_ids = self._helper.sample(
@@ -268,10 +273,10 @@ class BasicDecoder(Decoder):
 					state=cell_state,
 					sample_ids=sample_ids)
 		outputs = BasicDecoderOutput(cell_outputs, sample_ids)
-		save = attention
+		# save = attention
 		outputs, next_ids, next_state_ids = self._calc_final_dist(outputs, attention, p_gens, oov_ids, oov_sizes, decoder_vocab_size, batch_size, prev_ids, state_ids)
-		attention = save
-		return (outputs, line_alignments, word_alignments, attention, p_gens, next_state, next_inputs, finished, next_ids, next_state_ids)
+		# attention = save
+		return (outputs, p_gens, next_state, next_inputs, finished, next_ids, next_state_ids)
 
 def _create_zero_outputs(size, dtype, batch_size):
 	"""Create a zero outputs Tensor structure."""
@@ -380,16 +385,12 @@ def dynamic_decode(decoder,
 																							dtypes.float32)
 		initial_p_gens = nest.map_structure(_create_ta, tensor_shape.TensorShape(1),
 																							dtypes.float32)
-		# initial_ids = nest.map_structure(_create_ta, tensor_shape.TensorShape(1),
-		# 																					dtypes.int32)
-
-
 
 		def condition(unused_time, unused_ids, unused_state_ids, unused_outputs_ta, unused_state, unused_inputs,
-									finished, unused_sequence_lengths, p_gens, attention, line_alignments, word_alignments):
+									finished, unused_sequence_lengths, p_gens):
 			return math_ops.logical_not(math_ops.reduce_all(finished))
 
-		def body(time, prev_ids, state_ids, outputs_ta, state, inputs, finished, sequence_lengths, p_gens, attention, line_alignments, word_alignments):
+		def body(time, prev_ids, state_ids, outputs_ta, state, inputs, finished, sequence_lengths, p_gens):
 			"""Internal while_loop body.
 			Args:
 				time: scalar int32 tensor.
@@ -403,8 +404,17 @@ def dynamic_decode(decoder,
 					next_sequence_lengths)`.
 				```
 			"""
-			(next_outputs, next_line_alignment, next_word_alignment, next_attention, next_p_gens, decoder_state, next_inputs,
+			# oov_ids = tf.Print(oov_ids, [oov_ids], 'printing oov_ids', summarize=1000)
+			# oov_sizes = tf.Print(oov_sizes, [oov_sizes], 'printing oov_sizes', summarize=1000)
+			# inputs = tf.Print(inputs, [inputs], 'printing inputs', summarize=1000)
+
+			(next_outputs, next_p_gens, decoder_state, next_inputs,
 			 decoder_finished, next_ids, next_state_ids) = decoder.step(time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size)
+			
+			# next_p_gens = tf.Print(next_p_gens, [next_p_gens], 'printing next_p_gens', summarize=1000)
+			# next_inputs = tf.Print(next_inputs, [next_inputs], 'printing next_inputs', summarize=1000)
+			next_ids = tf.Print(next_ids, [next_ids], 'printing next_ids', summarize=1000)
+
 			next_finished = math_ops.logical_or(decoder_finished, finished)
 			if maximum_iterations is not None:
 				next_finished = math_ops.logical_or(
@@ -425,10 +435,7 @@ def dynamic_decode(decoder,
 			nest.assert_same_structure(state_ids, next_state_ids)
 			nest.assert_same_structure(outputs_ta, next_outputs)
 			nest.assert_same_structure(inputs, next_inputs)
-			nest.assert_same_structure(attention, next_attention)
 			nest.assert_same_structure(p_gens, next_p_gens)
-			nest.assert_same_structure(line_alignments, next_line_alignment)
-			nest.assert_same_structure(word_alignments, next_word_alignment)
 
 			# Zero out output values past finish
 			if impute_finished:
@@ -457,48 +464,31 @@ def dynamic_decode(decoder,
 
 			outputs_ta = nest.map_structure(lambda ta, out: ta.write(time, out),
 																			outputs_ta, emit)
-			attention = nest.map_structure(lambda ta, out: ta.write(time, out),
-																			 attention, next_attention)
 			p_gens = nest.map_structure(lambda ta, out: ta.write(time, out),
 																			 p_gens, next_p_gens)
-			line_alignments = nest.map_structure(lambda ta, out: ta.write(time, out),
-																			 line_alignments, next_line_alignment)
-			word_alignments = nest.map_structure(lambda ta, out: ta.write(time, out),
-																			 word_alignments, next_word_alignment)
+
 			return (time + 1, next_ids, next_state_ids, outputs_ta, next_state, next_inputs, next_finished,
-							next_sequence_lengths, p_gens, attention, line_alignments, word_alignments)
+							next_sequence_lengths, p_gens)
 
 		res = control_flow_ops.while_loop(
 				condition,
 				body,
 				loop_vars=[
 						initial_time, initial_ids, initial_state_ids, initial_outputs_ta, initial_state, initial_inputs,
-						initial_finished, initial_sequence_lengths, initial_p_gens, initial_attention, initial_line_alignment, initial_word_alignment,
+						initial_finished, initial_sequence_lengths, initial_p_gens
 				],
 				parallel_iterations=parallel_iterations,
 				swap_memory=swap_memory)
 
 		final_outputs_ta = res[3]
-		final_state = res[4]
-		final_sequence_lengths = res[7]
 		final_p_gens = res[8]
-		final_attention = res[9]
-		final_line_alignment = res[10]
-		final_word_alignment = res[11]
 
 		final_outputs = nest.map_structure(lambda ta: ta.stack(), final_outputs_ta)
-		final_attention = nest.map_structure(lambda ta: ta.stack(), final_attention)
-		final_line_alignment = nest.map_structure(lambda ta: ta.stack(), final_line_alignment)
-		final_word_alignment = nest.map_structure(lambda ta: ta.stack(), final_word_alignment)
 		final_p_gens = nest.map_structure(lambda ta: ta.stack(), final_p_gens)
 
 		if not output_time_major:
 			final_outputs = nest.map_structure(_transpose_batch_time, final_outputs)
 			final_p_gens = nest.map_structure(_transpose_batch_time, final_p_gens)
-			final_attention = nest.map_structure(_transpose_batch_time, final_attention)
-			final_line_alignment = nest.map_structure(_transpose_batch_time, final_line_alignment)
-			final_word_alignment = nest.map_structure(_transpose_batch_time, final_word_alignment)
 
-
-	return final_outputs, final_state, final_sequence_lengths, final_p_gens, final_attention, final_line_alignment, final_word_alignment
+	return final_outputs, final_p_gens
 
