@@ -684,11 +684,14 @@ class BeamSearchDecoder(decoder.Decoder):
           vocab_dists = tf.reshape(vocab_dists, [batch_size, decosder_vocab_size_n])
           p_gens = tf.map_fn(one_minus_fn, p_gens)
         else:
-          p_gens = tf.Print(p_gens, [p_gens], 'printing p_gens', summarize=32)
+          # vocab_dists = tf.Print(vocab_dists, [vocab_dists], '\nprinting vocab_dists', summarize=6)
           vocab_dists = tf.multiply(vocab_dists, p_gens)
+          # p_gens = tf.Print(p_gens, [p_gens], '\nprinting p_gens', summarize=1)
           one_minus_fn = lambda x: 1 - x
           p_gens = tf.map_fn(one_minus_fn, p_gens)
-          attn_dists = tf.multiply(p_gens, nn_ops.softmax(attn_dists))
+          # attn_dists = tf.Print(attn_dists, [attn_dists], '\nprinting attn_dists', summarize=70)
+          attn_dists = tf.multiply(p_gens, attn_dists)
+          # attn_dists = tf.Print(attn_dists, [attn_dists], '\nprinting pgen_attn_dists', summarize=70)
 
         max_oov_len = tf.reduce_max(oov_sizes_n, reduction_indices=[0])
 
@@ -713,6 +716,7 @@ class BeamSearchDecoder(decoder.Decoder):
         # attn_dists_projected = [tf.scatter_nd(indices, copy_dist, shape) for copy_dist in attn_dists] # list length max_dec_steps (batch_size, extended_vsize)
         # attn_dists_projected = array_ops.scatter_nd(indices, attn_dists, shape)
         attn_dists_projected = tf.scatter_nd(indices, attn_dists, shape)
+
         # Add the vocab distributions and the copy distributions together to get the final distributions
         # final_dists is a list length max_dec_steps; each entry is a tensor shape (batch_size, extended_vsize) giving the final distribution for that decoder timestep
         # Note that for decoder timesteps and examples corresponding to a [PAD] token, this is junk - ignore.
@@ -733,11 +737,15 @@ class BeamSearchDecoder(decoder.Decoder):
           unk_removed_vocab_dists_extended = tf.concat([first_part, tf.zeros_like(first_part), vocab_dists_extended[:,2:]], 1)
           final_dists = math_ops.add(unk_removed_vocab_dists_extended, attn_dists_projected)
         else:
+          # vocab_dists_extended = tf.Print(vocab_dists_extended, [vocab_dists_extended], '\nprinting vocab_dists_extended', summarize=6)
+
+          # attn_dists_projected = tf.Print(attn_dists_projected, [attn_dists_projected], '\nprinting attn_dists_projected', summarize=70)
+
           final_dists = math_ops.add(vocab_dists_extended, attn_dists_projected)
-          # final_dists = tf.Print(final_dists, [final_dists], 'printing old_dists', summarize=1000)
+          # final_dists = tf.Print(final_dists, [final_dists], '\nprinting final_dists', summarize=70)
           first_part = final_dists[:,:1]
           final_dists = tf.concat([tf.zeros_like(first_part), final_dists[:,1:]], 1)
-          final_dists = tf.Print(final_dists, [final_dists], 'printing final_dists', summarize=1000)
+          # final_dists = tf.Print(final_dists, [final_dists], 'printing final_dists', summarize=1000)
 
         return final_dists, vocab_dists_extended, next_state_ids
 
@@ -765,7 +773,7 @@ class BeamSearchDecoder(decoder.Decoder):
       cell_state = nest.map_structure(self._maybe_merge_batch_beams, cell_state,
                                       self._cell.state_size)
       cell_outputs, next_cell_state = self._cell(inputs, cell_state)
-      (cell_outputs, line_alignments, word_alignments, attention, p_gens) = cell_outputs
+      (cell_outputs, attention, p_gens) = cell_outputs
 
       if self._output_layer is not None:
         cell_outputs = self._output_layer(cell_outputs)
@@ -811,19 +819,20 @@ class BeamSearchDecoder(decoder.Decoder):
             length_penalty_weight=length_penalty_weight)
 
       next_ids = tf.reshape(next_ids, [batch_size, beam_width])
-      # next_ids = tf.Print(next_ids, [next_ids], 'printing next_ids', summarize=256)
+      
       state_ids = tf.reshape(state_ids, [batch_size, beam_width])
       #state_ids = tf.Print(state_ids, [state_ids], 'printing state_ids', summarize=256)
 
       finished = beam_search_state.finished
       sample_ids = beam_search_output.predicted_ids
-      sample_ids = tf.Print(sample_ids, [sample_ids], 'printing sample_ids', summarize=256)
+      # sample_ids = tf.Print(sample_ids, [sample_ids], 'printing sample_ids', summarize=32)
       unked_tokens = self._cast_tokens(sample_ids)
       next_inputs = control_flow_ops.cond(
           math_ops.reduce_all(finished), lambda: self._start_inputs,
           lambda: self._embedding_fn(unked_tokens))
+      # next_inputs = tf.Print(next_inputs, [next_inputs], 'printing next_inputs', summarize=32)
 
-    return (beam_search_output, line_alignments, word_alignments, attention, p_gens, beam_search_state, next_inputs, finished, next_ids, state_ids)
+    return (beam_search_output, p_gens, beam_search_state, next_inputs, finished, next_ids, state_ids)
 
 
 def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
@@ -888,6 +897,7 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
       beam_width, dtype=dtypes.int32, name="beam_width")
   next_beam_scores, word_indices = nn_ops.top_k(scores_flat, k=next_beam_size)
 
+
   next_beam_scores.set_shape([static_batch_size, beam_width])
   word_indices.set_shape([static_batch_size, beam_width])
 
@@ -906,9 +916,14 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
   # the op which prevents capturing it with tfdbg debug ops.
   raw_next_word_ids = math_ops.mod(
       word_indices, vocab_size, name="next_beam_word_ids")
+
+  # raw_next_word_ids = tf.Print(raw_next_word_ids, [raw_next_word_ids], 'printing raw_next_word_ids', summarize=1000)
+
   next_word_ids = math_ops.to_int32(raw_next_word_ids)
   next_beam_ids = math_ops.to_int32(
       word_indices / vocab_size, name="next_beam_parent_ids")
+
+  # next_beam_ids = tf.Print(next_beam_ids, [next_beam_ids], 'printing next_beam_ids', summarize=1000)
 
   # Append new ids to current predictions
   previously_finished = _tensor_gather_helper(

@@ -500,7 +500,8 @@ class MemN2NGeneratorDialog(object):
 						helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
 					decoder = self._get_rl_decoder(encoder_states, line_memory, word_memory, helper, batch_size, predict_flag=True)
 					outputs,_ = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, self._rl_oov_ids, maximum_iterations=2*self._candidate_sentence_size)
-					return tf.argmax(outputs.rnn_output, axis=-1), predicted_lengths_to_return
+					return outputs.sample_id, predicted_lengths_to_return
+					# return tf.argmax(outputs.rnn_output, axis=-1), predicted_lengths_to_return
 
 	def _decoder_train_rl(self, encoder_states, line_memory, word_memory=None):
 		'''

@@ -183,6 +183,8 @@ class BasicDecoder(Decoder):
 					attn_dists = tf.multiply(p_gens, attn_dists)
 
 				max_oov_len = tf.reduce_max(oov_sizes_n, reduction_indices=[0])
+				# max_oov_len = tf.Print(max_oov_len, [max_oov_len], 'printing max_oov_len', summarize=10000)
+
 
 				# Concatenate some zeros to each vocabulary dist, to hold the probabilities for in-article OOV words
 				extended_vsize =  decoder_vocab_size_n + max_oov_len # the maximum (over the batch) size of the extended vocabulary
@@ -236,9 +238,11 @@ class BasicDecoder(Decoder):
 					
 				else:
 					final_dists = math_ops.add(vocab_dists_extended, attn_dists_projected)
-				sample_ids = tf.argmax(vocab_dists_extended, axis=-1, output_type=tf.int32)
-				# final_dists = tf.Print(final_dists, [final_dists], 'printing sample_ids', summarize=10000)
-				return BasicDecoderOutput(final_dists, sample_ids), sample_ids, next_state_ids
+				full_sample_ids = tf.argmax(final_dists, axis=-1, output_type=tf.int32)
+				vocab_sample_ids = tf.argmax(vocab_dists_extended, axis=-1, output_type=tf.int32)
+				# final_dists = tf.Print(final_dists, [final_dists], 'printing final_dists', summarize=max_oov_len)
+				full_sample_ids = tf.Print(full_sample_ids, [full_sample_ids], 'printing full_sample_ids', summarize=32)
+				return BasicDecoderOutput(final_dists, full_sample_ids), vocab_sample_ids, next_state_ids
 
 	def initialize(self, name=None):
 		"""Initialize the decoder.
@@ -273,9 +277,7 @@ class BasicDecoder(Decoder):
 					state=cell_state,
 					sample_ids=sample_ids)
 		outputs = BasicDecoderOutput(cell_outputs, sample_ids)
-		# save = attention
 		outputs, next_ids, next_state_ids = self._calc_final_dist(outputs, attention, p_gens, oov_ids, oov_sizes, decoder_vocab_size, batch_size, prev_ids, state_ids)
-		# attention = save
 		return (outputs, p_gens, next_state, next_inputs, finished, next_ids, next_state_ids)
 
 def _create_zero_outputs(size, dtype, batch_size):
@@ -408,8 +410,8 @@ def dynamic_decode(decoder,
 			# oov_sizes = tf.Print(oov_sizes, [oov_sizes], 'printing oov_sizes', summarize=1000)
 			# inputs = tf.Print(inputs, [inputs], 'printing inputs', summarize=1000)
 
-			(next_outputs, next_p_gens, decoder_state, next_inputs,
-			 decoder_finished, next_ids, next_state_ids) = decoder.step(time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size)
+			(next_outputs, next_p_gens, decoder_state, next_inputs, decoder_finished, next_ids, next_state_ids) = \
+					decoder.step(time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size)
 			
 			# next_p_gens = tf.Print(next_p_gens, [next_p_gens], 'printing next_p_gens', summarize=1000)
 			# next_inputs = tf.Print(next_inputs, [next_inputs], 'printing next_inputs', summarize=1000)
@@ -423,12 +425,6 @@ def dynamic_decode(decoder,
 					math_ops.logical_and(math_ops.logical_not(finished), next_finished),
 					array_ops.fill(array_ops.shape(sequence_lengths), time + 1),
 					sequence_lengths)
-			# if decoder.type == 'Basic':
-			# 	next_ids = next_outputs.sample_id
-			# else:
-			# 	next_ids = next_ids
-
-
 
 			nest.assert_same_structure(state, decoder_state)
 			nest.assert_same_structure(prev_ids, next_ids)

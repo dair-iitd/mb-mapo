@@ -384,11 +384,15 @@ class chatBot(object):
 			else:
 				if args.beam:
 					parent_ids, predict_ids = self.model.api_predict(batch_entry)
+					# print(parent_ids)
+					# print(predict_ids)
 					actions = calculate_beam_result(parent_ids, predict_ids, args.max_api_length)
 					pred_action_lengths = None
+					# print(actions)
 				else:
 					preds, pred_action_lengths = self.model.api_predict(batch_entry)
 					actions = pad_to_answer_size(list(preds), args.max_api_length, True)
+					print(actions)
 
 			responses, batched_actions_and_rewards, high_probable_rewards, total_entries, valid_entries, perfect_match_entries = \
 					calculate_reward(glob, actions, pred_action_lengths, batch_entry, rl_data, self.db_engine, self.model, args, data, output=output, mode=args.rl_mode)
