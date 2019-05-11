@@ -8,7 +8,7 @@ from data import Batch
 ## Constants ##
 INVALID = 0
 NO_RES = 1
-RECALL_WEIGHT = 10
+RECALL_WEIGHT = 1000
 
 MAPO_ALPHA = 0.6
 
@@ -52,6 +52,9 @@ class ActionsAndRewards(object):
 	def get(self, index):
 		return self._actions[index], self._actions_emb_lookup[index], self._action_sizes[index], self._rewards[index]
 	
+	def get_reward(self, index):
+		return self._rewards[index]
+
 	def get_range(self, start, end, fixed_length_decode=False, glob=None):
 		range_actions_and_rewards = ActionsAndRewards()
 		for index in range(start, end):
@@ -84,7 +87,7 @@ def get_reward_and_results(db_engine, query, is_valid_query, next_entities_in_di
 			else:
 				recall = float(match/len(next_entities_in_dialog))
 			precision = float(match/len(result_entities_set))
-			reward = RECALL_WEIGHT * (recall + precision)
+			reward = recall + RECALL_WEIGHT*precision
 	else:
 		select_fields = []
 		db_results = []
@@ -183,15 +186,82 @@ def is_perfect_match(db_engine, api_call, sql_query):
 	else:
 		return 0
 
-def sample_from_prob_dist(prob_dist):
+def sample_k_from_prob_dist(prob_dist, k):
+	samples = []
+	for i in range(k):
+		sample = sample_from_prob_dist(prob_dist, samples)
+		samples.append(sample)
+	return samples
+
+def sample_from_prob_dist(prob_dist, already_sampled_list):
 	rand_value = random.uniform(0.0, 1.0)
-	sum=0
-	for i,prob in enumerate(prob_dist):
-		if rand_value > sum and rand_value <= sum+prob:
+	running_sum=0
+
+	temp_prob_dist = copy.deepcopy(prob_dist)
+	for index in already_sampled_list:
+		temp_prob_dist[index] = 0
+	
+	temp_prob_dist_normalized = [float(i)/sum(temp_prob_dist) for i in temp_prob_dist]
+
+	for i,prob in enumerate(temp_prob_dist_normalized):
+		if rand_value > running_sum and rand_value <= running_sum+prob:
 			return i
-		sum+=prob
+		running_sum+=prob
 	return (len(prob_dist)-1)
 
+def process_action_beam(action_beam, action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog):
+
+	# process_action_beam(action_beams[batch_index][0], pred_action_lengths[batch_index][0], args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
+	high_probable_action = action_beam
+	# unused
+	if args.fixed_length_decode:
+		high_probable_action_length = action_length
+
+	action_emb_lookup = []
+	action_surface_form = ""
+	action_size = 0
+
+	for word_id in high_probable_action:
+		action_size+=1
+		if word_id not in glob['idx_rl']:
+			action_emb_lookup.append(glob['rl_idx']['UNK'])
+			'''
+			if (word_id - total_rl_words) < len(rl_oov_words[batch_index]):
+				action_surface_form += " " + rl_oov_words[batch_index][word_id - total_rl_words]
+			else:
+				action_surface_form += " UNK"
+			'''
+			action_surface_form += " " + rl_oov_words[batch_index][word_id - total_rl_words]
+			if args.fixed_length_decode and action_size == high_probable_action_length:
+				# as action_size is reduced by 1 
+				action_size+=1
+				break
+		else:
+			word_form = glob['idx_rl'][word_id]
+			action_emb_lookup.append(word_id)
+			if args.fixed_length_decode:
+				if action_size == high_probable_action_length:
+					action_surface_form += " " + word_form
+					# as action_size is reduced by 1 
+					action_size+=1
+					break
+			else:
+				if word_form == "EOS":
+					break
+			action_surface_form += " " + word_form
+	
+	action_surface_form = action_surface_form.strip()
+	is_valid_query = db_engine.is_query_valid(action_surface_form)
+	
+	if len(high_probable_action) < max_api_length: pad = max_api_length - len(high_probable_action)
+	else: pad = 0
+	if len(action_emb_lookup) < max_api_length: pad_e = max_api_length - len(action_emb_lookup)
+	else: pad_e = 0
+
+	reward, select_fields, db_results = get_reward_and_results(db_engine, action_surface_form, is_valid_query, next_entities_in_dialog)
+	formatted_results = db_engine.get_formatted_results(select_fields, db_results)
+	
+	return high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query
 
 # Possible modes: 
 # GT : No decoder, the ground truth is returned
@@ -220,6 +290,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 	total_rl_words = len(rl_word_idx)
 
 	max_api_length = args.max_api_length
+	beam_width = args.beam_width
 
 	# convert to surface forms
 	batched_db_results = []
@@ -230,7 +301,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 	total_high_recall_actions_rewards = 0
 	
 	if mode == "MAPO":
-		total_width = 2 # one for sample inside the buffer, one for outside the buffer
+		total_width = beam_width
 	else:
 		total_width = 1
 
@@ -254,12 +325,14 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 
 		high_recall_queries = rlData[dialog_ids[batch_index]][turn_ids[batch_index]]['high_recall_queries']
 		
-		mapo_wi_plus = 0
+		mapo_pi_b = 0
+		queries_added = 0
 
 		# there is atleast one query in the buffer
 		if len(high_recall_queries) > 0:
 
 			if mode == "MAPO":
+				
 				# compute prob for all high recall queries in the Buffer
 				high_recall_actions_and_rewards = queries_to_actions_and_rewards(high_recall_queries, glob['rl_idx'], max_api_length, rl_oov_words[batch_index], total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
 				
@@ -279,134 +352,153 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					probs = model.api_prob(api_prob_batch, high_recall_actions_and_rewards.get_range(loop_count*batch_size, len(high_recall_queries), fixed_length_decode=args.fixed_length_decode, glob=glob))
 					buffer_log_probs += list(probs)
 				
+				# prob of all queries in the buffer
 				buffer_probs = np.exp(buffer_log_probs)
-				mapo_pi_b = np.sum(buffer_probs)
-				normalized_buffer_prob = buffer_probs/mapo_pi_b
-				sample_index = sample_from_prob_dist(normalized_buffer_prob)
-				action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(sample_index)
+				unclipped_mapo_pi_b = np.sum(buffer_probs)
+				
+				
+				reward_weight = 1
+				if unclipped_mapo_pi_b < MAPO_ALPHA:
+					'''
+					if unclipped_mapo_pi_b == 0:
+						equal_prob = MAPO_ALPHA/len(buffer_log_probs)
+						for i in range(len(buffer_probs)):
+							buffer_probs[i] = equal_prob
+						unclipped_mapo_pi_b = MAPO_ALPHA
+					else:
+						reward_weight = MAPO_ALPHA/unclipped_mapo_pi_b
+					'''
+					reward_weight = MAPO_ALPHA/unclipped_mapo_pi_b
 
+				mapo_pi_b = max(unclipped_mapo_pi_b, MAPO_ALPHA)
+				
+				# print top 10 high recall queries
 				if batch_index == 0:
+					#print("buffer_log_probs", buffer_log_probs)
+					#print("buffer_probs", buffer_probs)
+					#print("unclipped_mapo_pi_b", unclipped_mapo_pi_b)
+
+					#normalized_buffer_prob = buffer_probs/unclipped_mapo_pi_b
+					normalized_buffer_prob = buffer_probs
 					sortedRes = sorted(zip(normalized_buffer_prob, high_recall_queries), key=lambda x: x[0], reverse=True)
 					print("-------------------------")
+					print("reward_weight", reward_weight)
 					for i, res in enumerate(sortedRes):
+						action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(i)
 						if i == 10:
 							break
-						print(res)
+						print(res, reward[0])
 					print("-------------------------")
 
-				mapo_wi_plus = max(MAPO_ALPHA, mapo_pi_b)
-				reward[0] *= mapo_wi_plus
-				
-				total_high_recall_actions_rewards+= reward[0]
-				batched_actions_and_rewards[0].add_entry(
-					copy.deepcopy(action), copy.deepcopy(action_emb_lookup), copy.deepcopy(action_size), copy.deepcopy(reward))
-			
+				# push all the high recall queries into batched_actions_and_rewards
+
+				for i in range(len(high_recall_queries)):
+					action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(i)
+					total_high_recall_actions_rewards+= reward[0]
+					
+					reward[0] *= reward_weight*buffer_probs[i]
+					
+					batched_actions_and_rewards[i].add_entry(
+						copy.deepcopy(action), copy.deepcopy(action_emb_lookup), copy.deepcopy(action_size), copy.deepcopy(reward))
+					queries_added+=1
 			elif mode == "GREEDY":
 				action, action_emb_lookup, action_size, reward = get_best_action_with_reward(high_recall_queries, glob['rl_idx'], max_api_length, rl_oov_words[batch_index], total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
 				total_high_probable_rewards+= reward[0]
 				batched_actions_and_rewards[0].add_entry(
 					copy.deepcopy(np.array(action)), copy.deepcopy(np.array(action_emb_lookup)), copy.deepcopy(np.array(action_size)), copy.deepcopy(np.array(reward)))
+				total_entries += 1
 			elif mode == "GT":
 				action, action_emb_lookup, action_size, reward, select_fields, db_results = get_gt_action_with_results(rlData[dialog_id][turn_id]['api_call'], glob['rl_idx'], max_api_length, rl_oov_words[batch_index], total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
 				batched_db_results.append(db_engine.get_formatted_results(select_fields, db_results))
 				total_high_probable_rewards+= reward[0]
-				
-		# MAPO, rejection sampling outside the buffer
+				total_entries += 1
+		
+		# MAPO: rejection sampling outside the buffer
+		#	number of samples to be added = (beam_width - queries_added)
 		# Greedy, if no high recall action, just sample from policy
 		# GT, leave it blank
 		
-		total_entries += 1
 		if mode == "GT":
 			valid_entries += 1
 			perfect_match_entries += 1
 			if len(high_recall_queries) == 0:
 				batched_db_results.append([])
-		else:
-			
-			high_probable_action = action_beams[batch_index][0]
+		elif mode == "GREEDY":
+			# if there are no queries in buffer, then use the high probable one for greedy mode
+			pred_action_length = 0
 			if args.fixed_length_decode:
-				high_probable_action_length = pred_action_lengths[batch_index][0]
-
-			action_emb_lookup = []
-			action_surface_form = ""
-			action_size = 0
-
-			for word_id in high_probable_action:
-				action_size+=1
-				if word_id not in glob['idx_rl']:
-					action_emb_lookup.append(glob['rl_idx']['UNK'])
-					action_surface_form += " " + rl_oov_words[batch_index][word_id - total_rl_words]
-					if args.fixed_length_decode and action_size == high_probable_action_length:
-						# as action_size is reduced by 1 
-						action_size+=1
-						break
-				else:
-					word_form = glob['idx_rl'][word_id]
-					action_emb_lookup.append(word_id)
-					if args.fixed_length_decode:
-						if action_size == high_probable_action_length:
-							action_surface_form += " " + word_form
-							# as action_size is reduced by 1 
-							action_size+=1
-							break
-					else:
-						if word_form == "EOS":
-							break
-					action_surface_form += " " + word_form
-			
-			action_surface_form = action_surface_form.strip()
-			is_valid_query = db_engine.is_query_valid(action_surface_form)
-			
-			if len(high_probable_action) < max_api_length: pad = max_api_length - len(high_probable_action)
-			else: pad = 0
-			if len(action_emb_lookup) < max_api_length: pad_e = max_api_length - len(action_emb_lookup)
-			else: pad_e = 0
-
-			reward, select_fields, db_results = get_reward_and_results(db_engine, action_surface_form, is_valid_query, next_entities_in_dialog)
-			batched_db_results.append(db_engine.get_formatted_results(select_fields, db_results))
-			
-			if is_valid_query:
-				if len(db_results) > 0:
-					valid_entries += 1
-				perfect_match_entries += is_perfect_match(db_engine, rlData[dialog_id][turn_id]['api_call'], action_surface_form)
-
-			mapo_wi = 1-mapo_wi_plus
-
-			if batch_index == 0:
-				print("---------------------------------")
-				print("GT:", rlData[dialog_id][turn_id]['api_call'])
-				print("PREDICT:",action_surface_form)
-				if args.fixed_length_decode:
-					print("PREDICT LENGTH:",high_probable_action_length)
-				print("---------------------------------")
-			
-			# if there are no queries in buffer, then use the high probable one
+				pred_action_length = pred_action_lengths[batch_index][0]
+			high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query = process_action_beam(action_beams[batch_index][0], pred_action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
 			if len(high_recall_queries) == 0:
-				modified_reward = float(reward)
-				if mode == "MAPO":
-					modified_reward *= mapo_wi
 				batched_actions_and_rewards[0].add_entry(
-					np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([modified_reward]))
-				total_repeated_rewards += modified_reward
-			
-			# add on policy samples for mapo: outside the buffer
-			# TODO: implement rejection sampling, after fixing the BEAM search bug in copy decoder
-			if mode == "MAPO":
-				batched_actions_and_rewards[1].add_entry(
-					np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)*mapo_wi]))
-				total_high_probable_rewards += float(reward)*mapo_wi
+					(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([reward]))
+				total_repeated_rewards += reward
+		else:
+			# MAPO
+
+			# number of samples outside the buffer
+			K = total_width - queries_added
+			one_minus_mapo_pi_b_by_K = (1-mapo_pi_b)/K
+
+			for beam_index in range(beam_width):
+
+				if queries_added == total_width:
+					break
+				
+				pred_action_length = 0
+				if args.fixed_length_decode:
+					pred_action_length = pred_action_lengths[batch_index][beam_index]
+
+				high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query = process_action_beam(action_beams[batch_index][beam_index], pred_action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
+				
+				if beam_index == 0:
+					batched_db_results.append(formatted_results)
+					
+				if action_surface_form in high_recall_queries:
+					continue
+				
+				total_entries += 1
+				if beam_index == 0 and is_valid_query:
+					if len(formatted_results) > 0:
+						valid_entries += 1
+					perfect_match_entries += is_perfect_match(db_engine, rlData[dialog_id][turn_id]['api_call'], action_surface_form)
+				
+				if batch_index == 0:
+					if beam_index == 0:
+						print("---------------------------------")
+						print("GT:", rlData[dialog_id][turn_id]['api_call'])
+						print("PREDICT:",action_surface_form)
+						print("---------------------------------")
+					print(action_surface_form, float(reward))
+					
+				# add on policy samples for mapo: outside the buffer
+				batched_actions_and_rewards[queries_added].add_entry(
+						np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)*one_minus_mapo_pi_b_by_K]))
+				total_high_probable_rewards += float(reward)*one_minus_mapo_pi_b_by_K
+				#batched_actions_and_rewards[queries_added].add_entry(
+				#		np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)]))
+				#total_high_probable_rewards += float(reward)
+
+				queries_added += 1
 
 	# batched_actions_and_rewards is not used in GT mode
+	'''
 	if mode != "GT" and mode != "GREEDY":
 		# average all rewards to compute the baseline
 		# subtract baseline from each reward
 		total_rewards = total_high_probable_rewards + total_high_recall_actions_rewards + total_repeated_rewards
+		print("total_rewards", total_rewards)
 		if total_rewards > 0:
 			# average_rewards
 			baseline = (total_rewards)/float(total_width*batch_size)
+			print("baseline", (total_rewards)/float(total_width*batch_size))
 			for i in range(total_width):
 					for j in range(len(batched_actions_and_rewards[i].rewards)):
+						if i==0:
+							print(batched_actions_and_rewards[i].rewards[j], batched_actions_and_rewards[i].rewards[j] - baseline)
 						batched_actions_and_rewards[i].rewards[j] -= baseline
+	'''		
+						
 	if args.fixed_length_decode:
 		for actions_and_rewards in batched_actions_and_rewards:
 			actions_and_rewards.populate_rl_decode_length_class_id(glob['rl_decode_length_vs_index'])

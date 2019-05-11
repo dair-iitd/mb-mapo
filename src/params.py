@@ -27,13 +27,13 @@ flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss du
 
 # Model Type
 flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
-flags.DEFINE_boolean("beam", False, "if True, uses beam search decoder")
+flags.DEFINE_boolean("beam", True, "if True, uses beam search decoder")
 flags.DEFINE_boolean("sort", False, "if True, sort db results on rating")
 flags.DEFINE_boolean("constraint", False, "if True, perform constraint decoding")
 
 # RL Params
 flags.DEFINE_boolean("rl", True, 'if True, uses RL decoder')
-flags.DEFINE_string("rl_mode", "GREEDY", 'takes the following values: GT, GREEDY, MAPO')
+flags.DEFINE_string("rl_mode", "MAPO", 'takes the following values: GT, GREEDY, MAPO')
 flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action before decoding the action')
 flags.DEFINE_integer("max_api_length", 5, "Set the value based on DBEngine and QueryGenerator")
 # Output and Evaluation Specifications
@@ -43,16 +43,16 @@ flags.DEFINE_boolean("save", False, "if True, trains using previously saved mode
 flags.DEFINE_boolean("debug", False, 'if True, enables debug mode (Verbose Errors, but slower)')
 
 # Task Type
-flags.DEFINE_integer("task_id", 3, "bAbI task id, 1 <= id <= 8")
-flags.DEFINE_boolean('train', False, 'if True, begin to train')
+flags.DEFINE_integer("task_id", 7, "bAbI task id, 1 <= id <= 8")
+flags.DEFINE_boolean('train', True, 'if True, begin to train')
 flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 
 # File Locations
 flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
 flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
-flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3-fabricated.txt", "kb file for this task")
-#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
+#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3-fabricated.txt", "kb file for this task")
+flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
 flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
 
 def get_params():
@@ -67,8 +67,14 @@ def print_params(logging, args):
 
 	if "babi" in args.kb_file:
 		args.max_api_length = 5
+		# as the max number of high recall quiries are 15
+		if args.beam == True:
+			args.beam_width = 30
 	if "camrest" in args.kb_file:
 		args.max_api_length = 4
+		# as the max number of high recall quiries are 7
+		if args.beam == True:
+			args.beam_width = 14
 
 	'''
 		Print important model parameters
