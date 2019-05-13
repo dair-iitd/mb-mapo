@@ -356,15 +356,30 @@ def calculate_beam_result(parents, predictions, size):
     beam_width = parents.shape[2]
     length = parents.shape[1]
     for parent, pred in zip(list(parents), list(predictions)):
+
+        # actions = []
+        # action = defaultdict(list)
+        # for i in range(0, length-1):
+        #     for j in range(0, beam_width):
+        #         action[j].append(pred[i][parent[i+1][j]])
+        # for j in range(0, beam_width):
+        #     action[j].append(pred[length-1][j])
+        #     actions.append(action[j])
+        # beam_results.append(actions)
         actions = []
-        action = defaultdict(list)
-        for i in range(0, length-1):
-            for j in range(0, beam_width):
-                action[j].append(pred[i][parent[i+1][j]])
-        for j in range(0, beam_width):
-            action[j].append(pred[length-1][j])
-            actions.append(action[j])
+        for i in range(beam_width):
+            action = []
+            j = i
+            k = length-1
+            while k >= 0:
+                # print(j, k)
+                action.append(pred[k][j]) 
+                j = parent[k][j]
+                k -= 1;
+            actions.append(action[::-1])
         beam_results.append(actions)
+        # print(actions)
+    # print(beam_results)
     return beam_results
 
 def get_rl_decode_length_vs_index(RLtrainData, RLvalData):

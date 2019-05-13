@@ -433,6 +433,13 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				batched_actions_and_rewards[0].add_entry(
 					(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([reward]))
 				total_repeated_rewards += reward
+
+			if batch_index == 0:
+				print("---------------------------------")
+				print("GT:", rlData[dialog_id][turn_id]['api_call'])
+				print("PREDICT:",action_surface_form)
+				print("---------------------------------")
+				print(action_surface_form, float(reward))
 		else:
 			# MAPO
 

@@ -22,6 +22,7 @@ import collections
 import numpy as np
 import tensorflow as tf
 
+from tensorflow.contrib.seq2seq.python.ops import attention_wrapper
 from tensorflow.contrib.seq2seq.python.ops import beam_search_ops
 from tensorflow.contrib.seq2seq.python.ops import decoder
 from tensorflow.python.framework import dtypes
@@ -50,7 +51,8 @@ __all__ = [
 
 class BeamSearchDecoderState(
     collections.namedtuple("BeamSearchDecoderState",
-                           ("cell_state", "log_probs", "finished", "lengths"))):
+                           ("cell_state", "log_probs", "finished", "lengths",
+                            "accumulated_attention_probs"))):
   pass
 
 
@@ -84,7 +86,8 @@ def _tile_batch(t, multiplier):
   tiling = [1] * (t.shape.ndims + 1)
   tiling[1] = multiplier
   tiled_static_batch_size = (
-      t.shape[0].value * multiplier if t.shape[0].value is not None else None)
+      t.shape.dims[0].value * multiplier
+      if t.shape.dims[0].value is not None else None)
   tiled = array_ops.tile(array_ops.expand_dims(t, 1), tiling)
   tiled = array_ops.reshape(tiled,
                             array_ops.concat(
@@ -137,9 +140,9 @@ def gather_tree_from_array(t, parent_ids, sequence_length):
     A `Tensor` which is a stacked `TensorArray` of the same size and type as
     `t` and where beams are sorted in each `Tensor` according to `parent_ids`.
   """
-  max_time = parent_ids.shape[0].value or array_ops.shape(parent_ids)[0]
-  batch_size = parent_ids.shape[1].value or array_ops.shape(parent_ids)[1]
-  beam_width = parent_ids.shape[2].value or array_ops.shape(parent_ids)[2]
+  max_time = parent_ids.shape.dims[0].value or array_ops.shape(parent_ids)[0]
+  batch_size = parent_ids.shape.dims[1].value or array_ops.shape(parent_ids)[1]
+  beam_width = parent_ids.shape.dims[2].value or array_ops.shape(parent_ids)[2]
 
   # Generate beam ids that will be reordered by gather_tree.
   beam_ids = array_ops.expand_dims(
@@ -190,9 +193,9 @@ def _check_static_batch_beam_maybe(shape, batch_size, beam_width):
   reshaped to [batch_size, beam_size, -1].
   """
   reshaped_shape = tensor_shape.TensorShape([batch_size, beam_width, None])
-  if (batch_size is not None and shape[0].value is not None
+  if (batch_size is not None and shape.dims[0].value is not None
       and (shape[0] != batch_size * beam_width
-           or (shape.ndims >= 2 and shape[1].value is not None
+           or (shape.ndims >= 2 and shape.dims[1].value is not None
                and (shape[0] != batch_size or shape[1] != beam_width)))):
     tf_logging.warn("TensorArray reordering expects elements to be "
                     "reshapable to %s which is incompatible with the "
@@ -261,6 +264,10 @@ class BeamSearchDecoder(decoder.Decoder):
     decoder_initial_state = decoder_initial_state.clone(
         cell_state=tiled_encoder_final_state)
     ```
+
+    Meanwhile, with `AttentionWrapper`, coverage penalty is suggested to use
+    when computing scores(https://arxiv.org/pdf/1609.08144.pdf). It encourages
+    the translation to cover all inputs.
   """
 
   def __init__(self,
@@ -277,6 +284,7 @@ class BeamSearchDecoder(decoder.Decoder):
                constraint_mask=None,
                output_layer=None,
                length_penalty_weight=0.0,
+               coverage_penalty_weight=0.0,
                reorder_tensor_arrays=True):
     """Initialize the BeamSearchDecoder.
 
@@ -292,6 +300,8 @@ class BeamSearchDecoder(decoder.Decoder):
         `tf.layers.Dense`.  Optional layer to apply to the RNN output prior
         to storing the result or sampling.
       length_penalty_weight: Float weight to penalize length. Disabled with 0.0.
+      coverage_penalty_weight: Float weight to penalize the coverage of source
+        sentence. Disabled with 0.0.
       reorder_tensor_arrays: If `True`, `TensorArray`s' elements within the cell
         state will be reordered according to the beam search path. If the
         `TensorArray` can be reordered, the stacked form will be returned.
@@ -333,15 +343,12 @@ class BeamSearchDecoder(decoder.Decoder):
     self._batch_size = array_ops.size(start_tokens)
     self._beam_width = beam_width
     self._length_penalty_weight = length_penalty_weight
+    self._coverage_penalty_weight = coverage_penalty_weight
     self._initial_cell_state = nest.map_structure(
         self._maybe_split_batch_beams, initial_state, self._cell.state_size)
     self._start_tokens = array_ops.tile(
         array_ops.expand_dims(self._start_tokens, 1), [1, self._beam_width])
-
-    self._decoder_vocab_size = vocab_size
-    unked_tokens = self._cast_tokens(self._start_tokens)
-
-    self._start_inputs = self._embedding_fn(unked_tokens)
+    self._start_inputs = self._embedding_fn(self._start_tokens)
 
     self._finished = array_ops.one_hot(
         array_ops.zeros([self._batch_size], dtype=dtypes.int32),
@@ -350,6 +357,7 @@ class BeamSearchDecoder(decoder.Decoder):
         off_value=True,
         dtype=dtypes.bool)
 
+    self._decoder_vocab_size = vocab_size
     self._init_ids = init_ids
     self._state_ids = state_ids
     if state_mask is not None:
@@ -419,12 +427,6 @@ class BeamSearchDecoder(decoder.Decoder):
   def type(self):
     return "Beam"
 
-  def _cast_tokens(self, args):
-    threshold_mask_ones = tf.greater(args, tf.convert_to_tensor(self._decoder_vocab_size-1, dtype=tf.int32)) 
-    threshold_mask = tf.greater(tf.convert_to_tensor(self._decoder_vocab_size, dtype=tf.int32), args) 
-    ones = tf.ones(tf.shape(args), tf.int32) 
-    return tf.add(args * tf.cast(threshold_mask, dtype=tf.int32), ones * tf.cast(threshold_mask_ones, dtype=tf.int32))
-
   def initialize(self, name=None):
     """Initialize the decoder.
 
@@ -443,13 +445,19 @@ class BeamSearchDecoder(decoder.Decoder):
         on_value=ops.convert_to_tensor(0.0, dtype=dtype),
         off_value=ops.convert_to_tensor(-np.Inf, dtype=dtype),
         dtype=dtype)
+    init_attention_probs = get_attention_probs(
+        self._initial_cell_state, self._coverage_penalty_weight)
+    if init_attention_probs is None:
+      init_attention_probs = ()
 
     initial_state = BeamSearchDecoderState(
         cell_state=self._initial_cell_state,
         log_probs=log_probs,
         finished=finished,
         lengths=array_ops.zeros(
-            [self._batch_size, self._beam_width], dtype=dtypes.int64))
+            [self._batch_size, self._beam_width], dtype=dtypes.int64),
+        accumulated_attention_probs=init_attention_probs)
+
     return (finished, start_inputs, initial_state, self._init_ids, self._state_ids)
 
   def finalize(self, outputs, final_state, sequence_lengths):
@@ -685,7 +693,7 @@ class BeamSearchDecoder(decoder.Decoder):
           vocab_dists = tf.reshape(vocab_dists, [batch_size, decosder_vocab_size_n])
           p_gens = tf.map_fn(one_minus_fn, p_gens)
         else:
-          # vocab_dists = tf.Print(vocab_dists, [vocab_dists], '\nprinting vocab_dists', summarize=6)
+          vocab_dists = tf.Print(vocab_dists, [vocab_dists], '\nprinting vocab_dists', summarize=60)
           vocab_dists = tf.multiply(vocab_dists, p_gens)
           # p_gens = tf.Print(p_gens, [p_gens], '\nprinting p_gens', summarize=1)
           one_minus_fn = lambda x: 1 - x
@@ -697,7 +705,9 @@ class BeamSearchDecoder(decoder.Decoder):
         max_oov_len = tf.reduce_max(oov_sizes_n, reduction_indices=[0])
 
         # Concatenate some zeros to each vocabulary dist, to hold the probabilities for in-article OOV words
+        decoder_vocab_size_n = tf.Print(decoder_vocab_size_n, [decoder_vocab_size_n], 'printing decoder_vocab_size_n', summarize=832) 
         extended_vsize =  decoder_vocab_size_n + max_oov_len # the maximum (over the batch) size of the extended vocabulary
+        extended_vsize = tf.Print(extended_vsize, [extended_vsize], 'printing extended_vsize', summarize=832) 
         extra_zeros = tf.zeros((batch_size, max_oov_len))
         # vocab_dists_extended = [tf.concat(axis=1, values=[dist, extra_zeros]) for dist in vocab_dists] # list length max_dec_steps of shape (batch_size, extended_vsize)
         vocab_dists_extended = array_ops.concat([vocab_dists, extra_zeros], axis=1)
@@ -769,7 +779,7 @@ class BeamSearchDecoder(decoder.Decoder):
     beam_width = self._beam_width
     end_token = self._end_token
     length_penalty_weight = self._length_penalty_weight
-    # coverage_penalty_weight = self._coverage_penalty_weight
+    coverage_penalty_weight = self._coverage_penalty_weight
 
     with ops.name_scope(name, "BeamSearchDecoderStep", (time, inputs, state)):
       cell_state = state.cell_state
@@ -783,14 +793,14 @@ class BeamSearchDecoder(decoder.Decoder):
       if self._output_layer is not None:
         cell_outputs = self._output_layer(cell_outputs)
 
-      save = attention
-      cell_outputs, vocab_cell_outputs, state_ids = self._calc_final_dist(cell_outputs, attention, p_gens, oov_ids, oov_sizes, decoder_vocab_size, batch_size, prev_ids, state_ids)
-      attention = save
+      # save = attention
+      # cell_outputs, vocab_cell_outputs, state_ids = self._calc_final_dist(cell_outputs, attention, p_gens, oov_ids, oov_sizes, decoder_vocab_size, batch_size, prev_ids, state_ids)
+      # attention = save
 
       cell_outputs = nest.map_structure(
           lambda out: self._split_batch_beams(out, out.shape[1:]), cell_outputs)
-      vocab_cell_outputs = nest.map_structure(
-          lambda out: self._split_batch_beams(out, out.shape[1:]), vocab_cell_outputs)
+      # vocab_cell_outputs = nest.map_structure(
+      #     lambda out: self._split_batch_beams(out, out.shape[1:]), vocab_cell_outputs)
       next_cell_state = nest.map_structure(
           self._maybe_split_batch_beams, next_cell_state, self._cell.state_size)
 
@@ -802,112 +812,24 @@ class BeamSearchDecoder(decoder.Decoder):
           batch_size=batch_size,
           beam_width=beam_width,
           end_token=end_token,
-          length_penalty_weight=length_penalty_weight)
+          length_penalty_weight=length_penalty_weight,
+          coverage_penalty_weight=coverage_penalty_weight)
 
       finished = beam_search_state.finished
       sample_ids = beam_search_output.predicted_ids
-      # next_inputs = control_flow_ops.cond(
-      #     math_ops.reduce_all(finished), lambda: self._start_inputs,
-      #     lambda: self._embedding_fn(sample_ids))
-
-      unked_tokens = self._cast_tokens(sample_ids)
       next_inputs = control_flow_ops.cond(
           math_ops.reduce_all(finished), lambda: self._start_inputs,
-          lambda: self._embedding_fn(unked_tokens))
+          lambda: self._embedding_fn(sample_ids))
 
       next_ids = tf.reshape(sample_ids, [batch_size, beam_width])
       state_ids = tf.reshape(state_ids, [batch_size, beam_width])
 
     return (beam_search_output, p_gens, beam_search_state, next_inputs, finished, next_ids, state_ids)
 
-  # def step(self, time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size, name=None):
-  #   """Perform a decoding step.
-
-  #   Args:
-  #     time: scalar `int32` tensor.
-  #     inputs: A (structure of) input tensors.
-  #     state: A (structure of) state tensors and TensorArrays.
-  #     name: Name scope for any created operations.
-
-  #   Returns:
-  #     `(outputs, next_state, next_inputs, finished)`.
-  #   """
-  #   batch_size = self._batch_size
-  #   beam_width = self._beam_width
-  #   end_token = self._end_token
-  #   length_penalty_weight = self._length_penalty_weight
-
-  #   with ops.name_scope(name, "BeamSearchDecoderStep", (time, inputs, state)):
-  #     cell_state = state.cell_state
-  #     inputs = nest.map_structure(
-  #         lambda inp: self._merge_batch_beams(inp, s=inp.shape[2:]), inputs)
-  #     cell_state = nest.map_structure(self._maybe_merge_batch_beams, cell_state,
-  #                                     self._cell.state_size)
-  #     cell_outputs, next_cell_state = self._cell(inputs, cell_state)
-  #     (cell_outputs, attention, p_gens) = cell_outputs
-
-  #     if self._output_layer is not None:
-  #       cell_outputs = tf.Print(cell_outputs, [cell_outputs], 'printing cell_outputs', summarize=32)
-  #       cell_outputs = self._output_layer(cell_outputs)
-
-  #     save = attention
-  #     cell_outputs, vocab_cell_outputs, state_ids = self._calc_final_dist(cell_outputs, attention, p_gens, oov_ids, oov_sizes, decoder_vocab_size, batch_size, prev_ids, state_ids)
-  #     attention = save
-
-  #     cell_outputs = nest.map_structure(
-  #         lambda out: self._split_batch_beams(out, out.shape[1:]), cell_outputs)
-  #     vocab_cell_outputs = nest.map_structure(
-  #         lambda out: self._split_batch_beams(out, out.shape[1:]), vocab_cell_outputs)
-  #     next_cell_state = nest.map_structure(
-  #         self._maybe_split_batch_beams, next_cell_state, self._cell.state_size)
-
-  #     # cell_outputs = tf.Print(cell_outputs, [cell_outputs[0,:,:6]], 'printing cell_outputs', summarize=1000)
-
-  #     beam_search_output, next_ids, beam_search_state = _beam_search_step(
-  #         time=time,
-  #         logits=cell_outputs,
-  #         next_cell_state=next_cell_state,
-  #         beam_state=state,
-  #         batch_size=batch_size,
-  #         beam_width=beam_width,
-  #         end_token=end_token,
-  #         length_penalty_weight=length_penalty_weight)
-
-  #     # vocab_size = cell_outputs.shape[-1].value or array_ops.shape(cell_outputs)[-1]
-  #     # mask_yes = tf.ones([batch_size, beam_width, decoder_vocab_size], tf.float32)
-  #     # mask_no = tf.ones([batch_size, beam_width, vocab_size-decoder_vocab_size], tf.float32)
-  #     # final_mask = tf.concat([mask_yes, mask_no], 2)
-  #     # vocab_cell_outputs = tf.multiply(cell_outputs, final_mask)
-
-  #     if self._constraint_mask is not None:
-  #       _, next_ids, _ = _beam_search_step(
-  #           time=time,
-  #           logits=vocab_cell_outputs,
-  #           next_cell_state=next_cell_state,
-  #           beam_state=state,
-  #           batch_size=batch_size,
-  #           beam_width=beam_width,
-  #           end_token=end_token,
-  #           length_penalty_weight=length_penalty_weight)
-
-  #     next_ids = tf.reshape(next_ids, [batch_size, beam_width])
-      
-  #     state_ids = tf.reshape(state_ids, [batch_size, beam_width])
-  #     #state_ids = tf.Print(state_ids, [state_ids], 'printing state_ids', summarize=256)
-
-      # finished = beam_search_state.finished
-      # sample_ids = beam_search_output.predicted_ids
-      # # sample_ids = tf.Print(sample_ids, [sample_ids], 'printing sample_ids', summarize=32)
-      # unked_tokens = self._cast_tokens(sample_ids)
-      # next_inputs = control_flow_ops.cond(
-      #     math_ops.reduce_all(finished), lambda: self._start_inputs,
-      #     lambda: self._embedding_fn(unked_tokens))
-      # next_inputs = tf.Print(next_inputs, [next_inputs], 'printing next_inputs', summarize=32)
-
-  #   return (beam_search_output, p_gens, beam_search_state, next_inputs, finished, next_ids, state_ids)
 
 def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
-                      beam_width, end_token, length_penalty_weight):
+                      beam_width, end_token, length_penalty_weight,
+                      coverage_penalty_weight):
   """Performs a single step of Beam Search Decoding.
 
   Args:
@@ -958,31 +880,26 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
 
   # Calculate the accumulated attention probabilities if coverage penalty is
   # enabled.
-  # accumulated_attention_probs = None
-  # attention_probs = get_attention_probs(
-  #     next_cell_state, coverage_penalty_weight)
-  # if attention_probs is not None:
-  #   attention_probs *= array_ops.expand_dims(math_ops.to_float(not_finished), 2)
-  #   accumulated_attention_probs = (
-  #       beam_state.accumulated_attention_probs + attention_probs)
+  accumulated_attention_probs = None
+  attention_probs = get_attention_probs(
+      next_cell_state, coverage_penalty_weight)
+  if attention_probs is not None:
+    attention_probs *= array_ops.expand_dims(math_ops.to_float(not_finished), 2)
+    accumulated_attention_probs = (
+        beam_state.accumulated_attention_probs + attention_probs)
 
   # Calculate the scores for each beam
   scores = _get_scores(
       log_probs=total_probs,
       sequence_lengths=new_prediction_lengths,
-      length_penalty_weight=length_penalty_weight)
-  # scores = _get_scores(
-  #     log_probs=total_probs,
-  #     sequence_lengths=new_prediction_lengths,
-  #     length_penalty_weight=length_penalty_weight,
-  #     coverage_penalty_weight=coverage_penalty_weight,
-  #     finished=previously_finished,
-  #     accumulated_attention_probs=accumulated_attention_probs)
+      length_penalty_weight=length_penalty_weight,
+      coverage_penalty_weight=coverage_penalty_weight,
+      finished=previously_finished,
+      accumulated_attention_probs=accumulated_attention_probs)
 
   time = ops.convert_to_tensor(time, name="time")
   # During the first time step we only consider the initial beam
   scores_flat = array_ops.reshape(scores, [batch_size, -1])
-  # scores_flat = tf.Print(scores_flat, [scores_flat[0,:]], '\nprinting scores_flat', summarize=400)
 
   # Pick the next beams according to the specified successors function
   next_beam_size = ops.convert_to_tensor(
@@ -1036,16 +953,15 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
       range_size=beam_width,
       gather_shape=[-1])
   next_prediction_len += lengths_to_add
-
-  # next_accumulated_attention_probs = ()
-  # if accumulated_attention_probs is not None:
-  #   next_accumulated_attention_probs = _tensor_gather_helper(
-  #       gather_indices=next_beam_ids,
-  #       gather_from=accumulated_attention_probs,
-  #       batch_size=batch_size,
-  #       range_size=beam_width,
-  #       gather_shape=[batch_size * beam_width, -1],
-  #       name="next_accumulated_attention_probs")
+  next_accumulated_attention_probs = ()
+  if accumulated_attention_probs is not None:
+    next_accumulated_attention_probs = _tensor_gather_helper(
+        gather_indices=next_beam_ids,
+        gather_from=accumulated_attention_probs,
+        batch_size=batch_size,
+        range_size=beam_width,
+        gather_shape=[batch_size * beam_width, -1],
+        name="next_accumulated_attention_probs")
 
   # Pick out the cell_states according to the next_beam_ids. We use a
   # different gather_shape here because the cell_state tensors, i.e.
@@ -1066,7 +982,8 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
       cell_state=next_cell_state,
       log_probs=next_beam_probs,
       lengths=next_prediction_len,
-      finished=next_finished)
+      finished=next_finished,
+      accumulated_attention_probs=next_accumulated_attention_probs)
 
   output = BeamSearchDecoderOutput(
       scores=next_beam_scores,
@@ -1075,161 +992,54 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
 
   return output, next_state
 
-# def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
-#                       beam_width, end_token, length_penalty_weight):
-#   """Performs a single step of Beam Search Decoding.
 
-#   Args:
-#     time: Beam search time step, should start at 0. At time 0 we assume
-#       that all beams are equal and consider only the first beam for
-#       continuations.
-#     logits: Logits at the current time step. A tensor of shape
-#       `[batch_size, beam_width, vocab_size]`
-#     next_cell_state: The next state from the cell, e.g. an instance of
-#       AttentionWrapperState if the cell is attentional.
-#     beam_state: Current state of the beam search.
-#       An instance of `BeamSearchDecoderState`.
-#     batch_size: The batch size for this input.
-#     beam_width: Python int.  The size of the beams.
-#     end_token: The int32 end token.
-#     length_penalty_weight: Float weight to penalize length. Disabled with 0.0.
+def get_attention_probs(next_cell_state, coverage_penalty_weight):
+  """Get attention probabilities from the cell state.
 
-#   Returns:
-#     A new beam state.
-#   """
-#   static_batch_size = tensor_util.constant_value(batch_size)
+  Args:
+    next_cell_state: The next state from the cell, e.g. an instance of
+      AttentionWrapperState if the cell is attentional.
+    coverage_penalty_weight: Float weight to penalize the coverage of source
+      sentence. Disabled with 0.0.
 
-#   # Calculate the current lengths of the predictions
-#   prediction_lengths = beam_state.lengths
-#   previously_finished = beam_state.finished
+  Returns:
+    The attention probabilities with shape `[batch_size, beam_width, max_time]`
+    if coverage penalty is enabled. Otherwise, returns None.
 
-#   # Calculate the total log probs for the new hypotheses
-#   # Final Shape: [batch_size, beam_width, vocab_size]
-#   # logits = tf.Print(logits, [logits[0,:]], '\nprinting logits', summarize=400)
-#   step_log_probs = nn_ops.log_softmax(logits)
-#   # step_log_probs = tf.Print(step_log_probs, [step_log_probs[0,:]], '\nprinting step_log_probs', summarize=400)
-#   # step_log_probs = _mask_probs(step_log_probs, end_token, previously_finished)
-#   # step_log_probs = tf.Print(step_log_probs, [step_log_probs[0,:]], '\nprinting masked_log_probs', summarize=400)
-#   total_probs = array_ops.expand_dims(beam_state.log_probs, 2) + step_log_probs
-#   # total_probs = tf.Print(total_probs, [total_probs[0,:]], '\nprinting total_probs', summarize=400)
+  Raises:
+    ValueError: If no cell is attentional but coverage penalty is enabled.
+  """
+  if coverage_penalty_weight == 0.0:
+    return None
 
-#   # Calculate the continuation lengths by adding to all continuing beams.
-#   vocab_size = logits.shape[-1].value or array_ops.shape(logits)[-1]
-#   lengths_to_add = array_ops.one_hot(
-#       indices=array_ops.fill([batch_size, beam_width], end_token),
-#       depth=vocab_size,
-#       on_value=np.int64(0),
-#       off_value=np.int64(1),
-#       dtype=dtypes.int64)
-#   add_mask = math_ops.to_int64(math_ops.logical_not(previously_finished))
-#   lengths_to_add *= array_ops.expand_dims(add_mask, 2)
-#   new_prediction_lengths = (
-#       lengths_to_add + array_ops.expand_dims(prediction_lengths, 2))
+  # Attention probabilities of each attention layer. Each with shape
+  # `[batch_size, beam_width, max_time]`.
+  probs_per_attn_layer = []
+  if isinstance(next_cell_state, attention_wrapper.AttentionWrapperState):
+    probs_per_attn_layer = [attention_probs_from_attn_state(next_cell_state)]
+  elif isinstance(next_cell_state, tuple):
+    for state in next_cell_state:
+      if isinstance(state, attention_wrapper.AttentionWrapperState):
+        probs_per_attn_layer.append(attention_probs_from_attn_state(state))
+
+  if not probs_per_attn_layer:
+    raise ValueError(
+        "coverage_penalty_weight must be 0.0 if no cell is attentional.")
+
+  if len(probs_per_attn_layer) == 1:
+    attention_probs = probs_per_attn_layer[0]
+  else:
+    # Calculate the average attention probabilities from all attention layers.
+    attention_probs = [
+        array_ops.expand_dims(prob, -1) for prob in probs_per_attn_layer]
+    attention_probs = array_ops.concat(attention_probs, -1)
+    attention_probs = math_ops.reduce_mean(attention_probs, -1)
+
+  return attention_probs
 
 
-#   # Calculate the scores for each beam
-#   scores = _get_scores(
-#       log_probs=total_probs,
-#       sequence_lengths=new_prediction_lengths,
-#       length_penalty_weight=length_penalty_weight)
-
-#   time = ops.convert_to_tensor(time, name="time")
-#   # During the first time step we only consider the initial beam
-#   scores_flat = array_ops.reshape(scores, [batch_size, -1])
-  
-#   # scores_flat = tf.Print(scores_flat, [scores_flat[0,:]], '\nprinting scores_flat', summarize=400)
-
-#   # Pick the next beams according to the specified successors function
-#   next_beam_size = ops.convert_to_tensor(
-#       beam_width, dtype=dtypes.int32, name="beam_width")
-#   next_beam_scores, word_indices = nn_ops.top_k(scores_flat, k=next_beam_size)
-
-
-#   next_beam_scores.set_shape([static_batch_size, beam_width])
-#   word_indices.set_shape([static_batch_size, beam_width])
-
-#   # Pick out the probs, beam_ids, and states according to the chosen predictions
-#   next_beam_probs = _tensor_gather_helper(
-#       gather_indices=word_indices,
-#       gather_from=total_probs,
-#       batch_size=batch_size,
-#       range_size=beam_width * vocab_size,
-#       gather_shape=[-1],
-#       name="next_beam_probs")
-#   # next_beam_probs = tf.Print(next_beam_probs, [next_beam_probs[0,:]], '\nprinting next_beam_probs', summarize=400)
-  
-#   # Note: just doing the following
-#   #   math_ops.to_int32(word_indices % vocab_size,
-#   #       name="next_beam_word_ids")
-#   # would be a lot cleaner but for reasons unclear, that hides the results of
-#   # the op which prevents capturing it with tfdbg debug ops.
-#   raw_next_word_ids = math_ops.mod(
-#       word_indices, vocab_size, name="next_beam_word_ids")
-
-
-#   next_word_ids = math_ops.to_int32(raw_next_word_ids)
-#   next_beam_ids = math_ops.to_int32(word_indices / vocab_size, name="next_beam_parent_ids")
-
-#   # next_word_ids = tf.Print(next_word_ids, [next_word_ids], '\nprinting next_word_ids', summarize=8)
-#   # next_beam_ids = tf.Print(next_beam_ids, [next_beam_ids], '\nprinting next_beam_ids', summarize=8)
-
-#   # Append new ids to current predictions
-#   previously_finished = _tensor_gather_helper(
-#       gather_indices=next_beam_ids,
-#       gather_from=previously_finished,
-#       batch_size=batch_size,
-#       range_size=beam_width,
-#       gather_shape=[-1])
-
-#   next_finished = math_ops.logical_or(
-#       previously_finished,
-#       math_ops.equal(next_word_ids, end_token),
-#       name="next_beam_finished")
-
-#   # Calculate the length of the next predictions.
-#   # 1. Finished beams remain unchanged.
-#   # 2. Beams that are now finished (EOS predicted) have their length
-#   #    increased by 1.
-#   # 3. Beams that are not yet finished have their length increased by 1.
-#   lengths_to_add = math_ops.to_int64(math_ops.logical_not(previously_finished))
-#   next_prediction_len = _tensor_gather_helper(
-#       gather_indices=next_beam_ids,
-#       gather_from=beam_state.lengths,
-#       batch_size=batch_size,
-#       range_size=beam_width,
-#       gather_shape=[-1])
-#   next_prediction_len += lengths_to_add
-
-#   # Pick out the cell_states according to the next_beam_ids. We use a
-#   # different gather_shape here because the cell_state tensors, i.e.
-#   # the tensors that would be gathered from, all have dimension
-#   # greater than two and we need to preserve those dimensions.
-#   # pylint: disable=g-long-lambda
-#   next_cell_state = nest.map_structure(
-#       lambda gather_from: _maybe_tensor_gather_helper(
-#           gather_indices=next_beam_ids,
-#           gather_from=gather_from,
-#           batch_size=batch_size,
-#           range_size=beam_width,
-#           gather_shape=[batch_size * beam_width, -1]),
-#       next_cell_state)
-#   # pylint: enable=g-long-lambda
-
-#   next_state = BeamSearchDecoderState(
-#       cell_state=next_cell_state,
-#       log_probs=next_beam_probs,
-#       lengths=next_prediction_len,
-#       finished=next_finished)
-
-#   output = BeamSearchDecoderOutput(
-#       scores=next_beam_scores,
-#       predicted_ids=next_word_ids,
-#       parent_ids=next_beam_ids)
-
-#   return output, next_word_ids, next_state
-
-
-def _get_scores(log_probs, sequence_lengths, length_penalty_weight):
+def _get_scores(log_probs, sequence_lengths, length_penalty_weight,
+                coverage_penalty_weight, finished, accumulated_attention_probs):
   """Calculates scores for beam search hypotheses.
 
   Args:
@@ -1237,13 +1047,79 @@ def _get_scores(log_probs, sequence_lengths, length_penalty_weight):
       `[batch_size, beam_width, vocab_size]`.
     sequence_lengths: The array of sequence lengths.
     length_penalty_weight: Float weight to penalize length. Disabled with 0.0.
+    coverage_penalty_weight: Float weight to penalize the coverage of source
+      sentence. Disabled with 0.0.
+    finished: A boolean tensor of shape `[batch_size, beam_width]` that
+      specifies which elements in the beam are finished already.
+    accumulated_attention_probs: Accumulated attention probabilities up to the
+      current time step, with shape `[batch_size, beam_width, max_time]` if
+      coverage_penalty_weight is not 0.0.
 
   Returns:
-    The scores normalized by the length_penalty.
+    The scores normalized by the length_penalty and coverage_penalty.
+
+  Raises:
+    ValueError: accumulated_attention_probs is None when coverage penalty is
+      enabled.
   """
   length_penalty_ = _length_penalty(
       sequence_lengths=sequence_lengths, penalty_factor=length_penalty_weight)
-  return log_probs / length_penalty_
+  length_penalty_ = math_ops.cast(length_penalty_, dtype=log_probs.dtype)
+  scores = log_probs / length_penalty_
+
+  coverage_penalty_weight = ops.convert_to_tensor(
+      coverage_penalty_weight, name="coverage_penalty_weight")
+  if coverage_penalty_weight.shape.ndims != 0:
+    raise ValueError("coverage_penalty_weight should be a scalar, "
+                     "but saw shape: %s" % coverage_penalty_weight.shape)
+
+  if tensor_util.constant_value(coverage_penalty_weight) == 0.0:
+    return scores
+
+  if accumulated_attention_probs is None:
+    raise ValueError(
+        "accumulated_attention_probs can be None only if coverage penalty is "
+        "disabled.")
+
+  # Add source sequence length mask before computing coverage penalty.
+  accumulated_attention_probs = array_ops.where(
+      math_ops.equal(accumulated_attention_probs, 0.0),
+      array_ops.ones_like(accumulated_attention_probs),
+      accumulated_attention_probs)
+
+  # coverage penalty =
+  #     sum over `max_time` {log(min(accumulated_attention_probs, 1.0))}
+  coverage_penalty = math_ops.reduce_sum(
+      math_ops.log(math_ops.minimum(accumulated_attention_probs, 1.0)), 2)
+  # Apply coverage penalty to finished predictions.
+  coverage_penalty *= math_ops.to_float(finished)
+  weighted_coverage_penalty = coverage_penalty * coverage_penalty_weight
+  # Reshape from [batch_size, beam_width] to [batch_size, beam_width, 1]
+  weighted_coverage_penalty = array_ops.expand_dims(
+      weighted_coverage_penalty, 2)
+  return scores + weighted_coverage_penalty
+
+
+def attention_probs_from_attn_state(attention_state):
+  """Calculates the average attention probabilities.
+
+  Args:
+    attention_state: An instance of `AttentionWrapperState`.
+
+  Returns:
+    The attention probabilities in the given AttentionWrapperState.
+    If there're multiple attention mechanisms, return the average value from
+    all attention mechanisms.
+  """
+  # Attention probabilities over time steps, with shape
+  # `[batch_size, beam_width, max_time]`.
+  attention_probs = attention_state.alignments
+  if isinstance(attention_probs, tuple):
+    attention_probs = [
+        array_ops.expand_dims(prob, -1) for prob in attention_probs]
+    attention_probs = array_ops.concat(attention_probs, -1)
+    attention_probs = math_ops.reduce_mean(attention_probs, -1)
+  return attention_probs
 
 
 def _length_penalty(sequence_lengths, penalty_factor):

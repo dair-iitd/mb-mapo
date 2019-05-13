@@ -358,11 +358,13 @@ class chatBot(object):
 		acc['api'] = (matched_query_ratio if args.rl and self.model.phase >= 2 else 0.0)
 		return acc
 	
-	def surface_form(self, batch, actions, batch_index):
+	def surface_form(self, batch, parent_ids, predict_ids, actions, batch_index):
 		rl_oov_words = batch.rl_oov_words
 		rl_word_idx  = glob['idx_rl']
 		total_rl_words = len(rl_word_idx)
-		for action in actions:
+		action_set = []
+		hit = False
+		for i, action in enumerate(actions):
 			action_surface_form = ""
 			for word_id in action:
 				if word_id not in glob['idx_rl']:
@@ -370,7 +372,18 @@ class chatBot(object):
 				else:
 					word_form = glob['idx_rl'][word_id]
 					action_surface_form += " " + word_form
-			print(action_surface_form)
+			# print(action)
+			# print(action_surface_form)
+			if action_surface_form not in action_set:
+				action_set.append(action_surface_form)
+			else:
+				print(action_surface_form)
+				action_set.append(action_surface_form)
+				hit = True
+		# if hit:			
+		# print(action_set)	
+		# print(parent_ids)
+		# print(predict_ids)
 
 	def batch_train_api(self, data, batches, rl_data, train=True, output=False):
 		'''
@@ -403,8 +416,9 @@ class chatBot(object):
 					actions = calculate_beam_result(parent_ids, predict_ids, args.max_api_length)
 					pred_action_lengths = None
 					for batch_index, action_set in enumerate(actions):
-						print()
-						self.surface_form(batch_entry, action_set, batch_index)
+						# print()
+						self.surface_form(batch_entry, parent_ids[batch_index], predict_ids[batch_index], action_set, batch_index)
+					# sys.exit()
 				else:
 					preds, pred_action_lengths = self.model.api_predict(batch_entry)
 					actions = pad_to_answer_size(list(preds), args.max_api_length, True)
