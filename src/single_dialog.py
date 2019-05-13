@@ -415,9 +415,9 @@ class chatBot(object):
 					# print(predict_ids)
 					actions = calculate_beam_result(parent_ids, predict_ids, args.max_api_length)
 					pred_action_lengths = None
-					for batch_index, action_set in enumerate(actions):
+					#for batch_index, action_set in enumerate(actions):
 						# print()
-						self.surface_form(batch_entry, parent_ids[batch_index], predict_ids[batch_index], action_set, batch_index)
+						# self.surface_form(batch_entry, parent_ids[batch_index], predict_ids[batch_index], action_set, batch_index)
 					# sys.exit()
 				else:
 					preds, pred_action_lengths = self.model.api_predict(batch_entry)

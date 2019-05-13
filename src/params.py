@@ -9,12 +9,12 @@ flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
 flags.DEFINE_integer("epochs", 4000, "Number of epochs to train for.")
 
 # Model Params
-flags.DEFINE_float("learning_rate", 0.01, "Learning rate for Adam Optimizer.")
+flags.DEFINE_float("learning_rate", 0.001, "Learning rate for Adam Optimizer.")
 flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-flags.DEFINE_integer("embedding_size", 64, "Embedding size for embedding matrices.")
+flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
-flags.DEFINE_integer("beam_width", 2, "Width of Beam for BeamSearchDecoder")
+flags.DEFINE_integer("beam_width", 14, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 2, "Start Phase for RL training")
 
 # Entity Word Drop
@@ -33,9 +33,9 @@ flags.DEFINE_boolean("constraint", False, "if True, perform constraint decoding"
 
 # RL Params
 flags.DEFINE_boolean("rl", True, 'if True, uses RL decoder')
-flags.DEFINE_string("rl_mode", "GREEDY", 'takes the following values: GT, GREEDY, MAPO')
+flags.DEFINE_string("rl_mode", "MAPO", 'takes the following values: GT, GREEDY, MAPO')
 flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action before decoding the action')
-flags.DEFINE_integer("max_api_length", 5, "Set the value based on DBEngine and QueryGenerator")
+flags.DEFINE_integer("max_api_length", 4, "Set the value based on DBEngine and QueryGenerator")
 # Output and Evaluation Specifications
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
 flags.DEFINE_boolean("bleu_score", True, 'if True, uses BLUE word score to compute best model')
@@ -65,16 +65,16 @@ def print_params(logging, args):
 	
 	args.constraint == False
 
-	# if "babi" in args.kb_file:
-	# 	args.max_api_length = 5
-	# 	# as the max number of high recall quiries are 15
-	# 	if args.beam == True:
-	# 		args.beam_width = 30
-	# if "camrest" in args.kb_file:
-	# 	args.max_api_length = 4
-	# 	# as the max number of high recall quiries are 7
-	# 	if args.beam == True:
-	# 		args.beam_width = 14
+	if "babi" in args.kb_file:
+	 	args.max_api_length = 5
+	 	# as the max number of high recall quiries are 15
+	 	if args.beam == True:
+	 		args.beam_width = 30
+	if "camrest" in args.kb_file:
+	 	args.max_api_length = 4
+	 	# as the max number of high recall quiries are 7
+	 	if args.beam == True:
+	 		args.beam_width = 14
 
 	'''
 		Print important model parameters

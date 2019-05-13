@@ -7,8 +7,8 @@ from data import Batch
 
 ## Constants ##
 INVALID = 0
-NO_RES = 1
-RECALL_WEIGHT = 1000
+NO_RES = 0
+REWARD_WEIGHT = 100
 
 MAPO_ALPHA = 0.6
 
@@ -82,12 +82,12 @@ def get_reward_and_results(db_engine, query, is_valid_query, next_entities_in_di
 			for next_entity in next_entities_in_dialog:
 				if next_entity in result_entities_set:
 					match += 1
-			if len(next_entities_in_dialog) == 0:
-				recall = 0.0
+			if len(next_entities_in_dialog) == 0 or match == 0:
+				reward = 0.0
 			else:
 				recall = float(match/len(next_entities_in_dialog))
-			precision = float(match/len(result_entities_set))
-			reward = recall + RECALL_WEIGHT*precision
+				precision = float(match/len(result_entities_set))
+				reward = REWARD_WEIGHT*(2*recall*precision)/(recall+precision)
 	else:
 		select_fields = []
 		db_results = []
@@ -380,14 +380,15 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 
 					#normalized_buffer_prob = buffer_probs/unclipped_mapo_pi_b
 					normalized_buffer_prob = buffer_probs
-					sortedRes = sorted(zip(normalized_buffer_prob, high_recall_queries), key=lambda x: x[0], reverse=True)
-					print("-------------------------")
-					print("reward_weight", reward_weight)
+					indices = [i for i in range(len(high_recall_queries))]
+					sortedRes = sorted(zip(normalized_buffer_prob, high_recall_queries, indices), key=lambda x: x[0], reverse=True)
+					print("------- Buffer ---------")
+					#print("reward_weight", reward_weight)
 					for i, res in enumerate(sortedRes):
-						action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(i)
-						if i == 10:
+						action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(res[2])
+						if i == 20:
 							break
-						print(res, reward[0])
+						print(res[0], res[1], reward[0])
 					print("-------------------------")
 
 				# push all the high recall queries into batched_actions_and_rewards
@@ -447,8 +448,41 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 			K = total_width - queries_added
 			one_minus_mapo_pi_b_by_K = (1-mapo_pi_b)/K
 
-			for beam_index in range(beam_width):
+			if batch_index == 0:
+				predict_buffer_log_probs = []
+				loop_count = len(action_beams[batch_index])//batch_size
+				last_batch_count = len(action_beams[batch_index])%batch_size
+				
+				prob_actions_and_rewards = ActionsAndRewards()
+				for beam_index in range(beam_width):
+					pred_action_length = 0
+					if args.fixed_length_decode:
+						pred_action_length = pred_action_lengths[batch_index][beam_index]
+					high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query = process_action_beam(action_beams[batch_index][beam_index], pred_action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
+					prob_actions_and_rewards.add_entry(
+							np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)*one_minus_mapo_pi_b_by_K]))
 
+				api_prob_batch = Batch(data, None, args, glob, repeatCopyMode=True, batchToCopy=batch, indexToCopy=batch_index, noOfCopies=len(prob_actions_and_rewards.actions))
+				predict_buffer_log_probs = model.api_prob(api_prob_batch, prob_actions_and_rewards)
+				
+				predict_buffer_probs = np.exp(predict_buffer_log_probs)
+
+				print("------ Predicted Beam ---------")
+				for beam_index in range(beam_width):
+					action_surface_form = ""
+					for word_id in action_beams[batch_index][beam_index]:
+						if word_id not in glob['idx_rl']:
+							action_surface_form += " " + rl_oov_words[batch_index][word_id - total_rl_words]
+						else:
+							word_form = glob['idx_rl'][word_id]
+							action_surface_form += " " + word_form
+
+					print(predict_buffer_probs[beam_index], action_surface_form, prob_actions_and_rewards.rewards[beam_index][0])
+				print("---------------------------------")
+				print("")
+
+			for beam_index in range(beam_width):
+				
 				if queries_added == total_width:
 					break
 				
@@ -470,6 +504,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 						valid_entries += 1
 					perfect_match_entries += is_perfect_match(db_engine, rlData[dialog_id][turn_id]['api_call'], action_surface_form)
 				
+				'''
 				if batch_index == 0:
 					if beam_index == 0:
 						print("---------------------------------")
@@ -477,7 +512,8 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 						print("PREDICT:",action_surface_form)
 						print("---------------------------------")
 					print(action_surface_form, float(reward))
-					
+				'''
+
 				# add on policy samples for mapo: outside the buffer
 				batched_actions_and_rewards[queries_added].add_entry(
 						np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)*one_minus_mapo_pi_b_by_K]))
