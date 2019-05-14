@@ -265,6 +265,7 @@ class BeamSearchDecoder(decoder.Decoder):
 
   def __init__(self,
                cell,
+               pos_embedding,
                embedding,
                start_tokens,
                end_token,
@@ -320,6 +321,12 @@ class BeamSearchDecoder(decoder.Decoder):
     else:
       self._embedding_fn = (
           lambda ids: embedding_ops.embedding_lookup(embedding, ids))
+
+    if callable(pos_embedding):
+      self._pos_embedding_fn = pos_embedding
+    else:
+      self._pos_embedding_fn = (
+          lambda ids: embedding_ops.embedding_lookup(pos_embedding, ids))
 
     self._start_tokens = ops.convert_to_tensor(
         start_tokens, dtype=dtypes.int32, name="start_tokens")
@@ -776,6 +783,13 @@ class BeamSearchDecoder(decoder.Decoder):
           lambda inp: self._merge_batch_beams(inp, s=inp.shape[2:]), inputs)
       cell_state = nest.map_structure(self._maybe_merge_batch_beams, cell_state,
                                       self._cell.state_size)
+
+      new_batch_size = ops.convert_to_tensor([batch_size*beam_width], name="new_batch_size") 
+      pos = ops.convert_to_tensor([time], name="pos") 
+      positions = tf.tile(pos, new_batch_size)
+      position_emb = self._pos_embedding_fn(positions)
+      inputs = (inputs, position_emb)
+      
       cell_outputs, next_cell_state = self._cell(inputs, cell_state)
       (cell_outputs, attention, p_gens) = cell_outputs
 
