@@ -112,6 +112,7 @@ def get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total
 	action = []
 	action_emb = []
 	
+	no_of_dontcares = 0
 	for word in words:
 		if word not in rl_idx:
 			if word in rl_oov_word_list:
@@ -121,6 +122,8 @@ def get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total
 				action.append(rl_idx['UNK'])
 			action_emb.append(rl_idx['UNK'])
 		else:
+			if word == "dontcare":
+				no_of_dontcares += 1
 			action.append(rl_idx[word])
 			action_emb.append(rl_idx[word])
 
@@ -140,7 +143,8 @@ def get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total
 	action_emb = action_emb + [rl_idx['PAD']]*pad
 
 	reward = get_reward_for_query(query, cache_key_prefix, db_engine, next_entities_in_dialog)
-
+	reward = reward*(4-no_of_dontcares)
+	
 	return action, action_emb, [action_size], [reward]
 
 # input: SQL queries (high reward queries)
@@ -221,6 +225,7 @@ def process_action_beam(action_beam, action_length, args, glob, rl_oov_words, ba
 	action_surface_form = ""
 	action_size = 0
 
+	no_of_dontcares = 0
 	for word_id in high_probable_action:
 		action_size+=1
 		if word_id not in glob['idx_rl']:
@@ -238,6 +243,8 @@ def process_action_beam(action_beam, action_length, args, glob, rl_oov_words, ba
 				break
 		else:
 			word_form = glob['idx_rl'][word_id]
+			if word_form == 'dontcare':
+				no_of_dontcares+=1
 			action_emb_lookup.append(word_id)
 			if args.fixed_length_decode:
 				if action_size == high_probable_action_length:
@@ -260,6 +267,8 @@ def process_action_beam(action_beam, action_length, args, glob, rl_oov_words, ba
 
 	reward, select_fields, db_results = get_reward_and_results(db_engine, action_surface_form, is_valid_query, next_entities_in_dialog)
 	formatted_results = db_engine.get_formatted_results(select_fields, db_results)
+
+	reward = reward*(4-no_of_dontcares)
 
 	# changed valid_query condition
 	# the query should have atleast one result
@@ -504,8 +513,8 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 
 				high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query = process_action_beam(action_beams[batch_index][beam_index], pred_action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
 				
-				total_entries += 1
-				if beam_index == 0 and is_valid_query:
+				if beam_index == 0:
+					total_entries += 1
 					total_high_probable_rewards += float(reward)
 					if len(formatted_results) > 0:
 						valid_entries += 1
