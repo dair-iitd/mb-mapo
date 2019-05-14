@@ -30,6 +30,7 @@ from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import tensor_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import rnn
 from tensorflow.python.ops import tensor_array_ops
@@ -54,7 +55,7 @@ class BasicDecoderOutput(
 class BasicDecoder(Decoder):
 	"""Basic sampling decoder."""
 
-	def __init__(self, cell, helper, initial_state, initial_ids, state_ids, state_mask=None, constraint_mask=None, output_layer=None):
+	def __init__(self, cell, pos_embedding,  helper, initial_state, initial_ids, state_ids, state_mask=None, constraint_mask=None, output_layer=None):
 		"""Initialize BasicDecoder.
 		Args:
 			cell: An `RNNCell` instance.
@@ -90,6 +91,11 @@ class BasicDecoder(Decoder):
 			self._constraint_mask = None
 		self._initial_ids = initial_ids
 		self._state_ids = state_ids
+
+		if callable(pos_embedding):
+			self._pos_embedding_fn = pos_embedding
+		else:
+			self._pos_embedding_fn = (lambda ids: embedding_ops.embedding_lookup(pos_embedding, ids))
 
 	@property
 	def batch_size(self):
@@ -265,6 +271,14 @@ class BasicDecoder(Decoder):
 		"""
 		with ops.name_scope(name, "BasicDecoderStep", (time, inputs, state)):
 			# inputs = tf.Print(inputs, [inputs], 'printing inputs', summarize=1000)
+			new_batch_size = ops.convert_to_tensor([batch_size], name="new_batch_size") 
+			pos = ops.convert_to_tensor([time], name="pos") 
+			positions = tf.tile(pos, new_batch_size)
+			# positions = tf.Print(positions, [positions], '\nprinting positions', summarize=400)
+			position_emb = self._pos_embedding_fn(positions)
+			# position_emb = tf.Print(position_emb, [position_emb], '\nprinting position_emb', summarize=400)
+			inputs = (inputs, position_emb)
+
 			cell_outputs, cell_state = self._cell(inputs, state)
 			(cell_outputs, attention, p_gens) = cell_outputs
 			if self._output_layer is not None:

@@ -896,7 +896,9 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
 
     # Step 1: Calculate the true inputs to the cell based on the
     # previous attention value.
+    inputs, position_emb = inputs
     cell_inputs = self._cell_input_fn(inputs, state.attention)
+    cell_inputs = self._cell_input_fn(cell_inputs, position_emb)
     cell_state = state.cell_state
     cell_output, next_cell_state = self._cell(cell_inputs, cell_state)
 

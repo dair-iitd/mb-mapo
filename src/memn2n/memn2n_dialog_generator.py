@@ -185,6 +185,11 @@ class MemN2NGeneratorDialog(object):
 			# Hop Context Vector to Output Query 
 			self.H = tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="H")
 
+			# Initialize Embedding for Position Information
+			if self._rl:
+				P = self._init([self._max_api_length, int(self._embedding_size / 8)])
+				self.P = tf.Variable(P, name="P")
+
 			with tf.variable_scope("encoder"):
 				self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
 				self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
@@ -291,7 +296,7 @@ class MemN2NGeneratorDialog(object):
 
 		init_ids = tf.fill([batch_size], self.GO_SYMBOL)
 		state_ids = tf.fill([batch_size], self.START_STATE)
-		decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, init_ids, state_ids, output_layer=self.projection_layer)
+		decoder = BasicDecoder(decoder_cell_with_attn, self.P, helper, wrapped_encoder_states, init_ids, state_ids, output_layer=self.projection_layer)
 		return decoder
 
 	def _get_beam_decoder(self, encoder_states, line_memory, word_memory, batch_size):
@@ -316,7 +321,7 @@ class MemN2NGeneratorDialog(object):
 		
 		init_ids = tf.fill([batch_size, self._beam_width], self.GO_SYMBOL)
 		state_ids = tf.fill([batch_size, self._beam_width], self.START_STATE)
-		decoder = BeamSearchDecoder(decoder_cell_with_attn, self.C, tf.fill([batch_size], self.GO_SYMBOL), self._decode_idx['EOS'], decoder_initial_state, self._beam_width, self._decoder_vocab_size, init_ids, state_ids, output_layer=self.projection_layer)
+		decoder = BeamSearchDecoder(decoder_cell_with_attn, self.P, self.C, tf.fill([batch_size], self.GO_SYMBOL), self._decode_idx['EOS'], decoder_initial_state, self._beam_width, self._decoder_vocab_size, init_ids, state_ids, output_layer=self.projection_layer)
 		return decoder
 
 	def _get_rl_decoder(self, encoder_states, line_memory, word_memory, helper, batch_size, predict_flag=True):
@@ -338,9 +343,9 @@ class MemN2NGeneratorDialog(object):
 		init_ids = tf.fill([batch_size], self.GO_SYMBOL)
 		state_ids = tf.fill([batch_size], self.START_STATE)
 		if predict_flag and self._constraint:
-			decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, init_ids, state_ids, state_mask=self._state_mask, constraint_mask=self._constraint_mask, output_layer=self.rl_projection_layer)
+			decoder = BasicDecoder(decoder_cell_with_attn, self.P, helper, wrapped_encoder_states, init_ids, state_ids, state_mask=self._state_mask, constraint_mask=self._constraint_mask, output_layer=self.rl_projection_layer)
 		else:
-			decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, init_ids, state_ids, output_layer=self.rl_projection_layer)
+			decoder = BasicDecoder(decoder_cell_with_attn, self.P, helper, wrapped_encoder_states, init_ids, state_ids, output_layer=self.rl_projection_layer)
 		return decoder
 
 	def _get_rl_beam_decoder(self, encoder_states, line_memory, word_memory, batch_size):
@@ -366,9 +371,9 @@ class MemN2NGeneratorDialog(object):
 		init_ids = tf.fill([batch_size, self._beam_width], self.GO_SYMBOL)
 		state_ids = tf.fill([batch_size, self._beam_width], self.START_STATE)
 		if self._constraint:
-			decoder = BeamSearchDecoder(decoder_cell_with_attn, self.R, tf.fill([batch_size], self.GO_SYMBOL), self._decode_idx['EOS'], decoder_initial_state, self._beam_width, self._rl_vocab_size, init_ids, state_ids, state_mask=self._state_mask, constraint_mask=self._constraint_mask, output_layer=self.rl_projection_layer)
+			decoder = BeamSearchDecoder(decoder_cell_with_attn, self.P, self.R, tf.fill([batch_size], self.GO_SYMBOL), self._decode_idx['EOS'], decoder_initial_state, self._beam_width, self._rl_vocab_size, init_ids, state_ids, state_mask=self._state_mask, constraint_mask=self._constraint_mask, output_layer=self.rl_projection_layer)
 		else:
-			decoder = BeamSearchDecoder(decoder_cell_with_attn, self.R, tf.fill([batch_size], self.GO_SYMBOL), self._decode_idx['EOS'], decoder_initial_state, self._beam_width, self._rl_vocab_size, init_ids, state_ids, output_layer=self.rl_projection_layer)
+			decoder = BeamSearchDecoder(decoder_cell_with_attn, self.P, self.R, tf.fill([batch_size], self.GO_SYMBOL), self._decode_idx['EOS'], decoder_initial_state, self._beam_width, self._rl_vocab_size, init_ids, state_ids, output_layer=self.rl_projection_layer)
 		return decoder
 
 	###################################################################################################
