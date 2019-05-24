@@ -587,7 +587,7 @@ class MemN2NGeneratorDialog(object):
 					# predicted_length_logits: batch_size x rl_length_classes
 					predicted_length_logits = tf.matmul(encoder_states, self.action_length_ff_layer)
 					# length_dist: batch_size x rl_length_classes
-					length_log_dist = tf.nn.log_softmax(predicted_length_logits)
+					length_log_dist = math_ops.log(predicted_length_logits)
 					
 					# remove eos from the answers
 					answer_sizes = tf.subtract(answer_sizes, tf.ones_like(answer_sizes))

@@ -36,6 +36,7 @@ flags.DEFINE_boolean("rl", True, 'if True, uses RL decoder')
 flags.DEFINE_string("rl_mode", "MAPO", 'takes the following values: GT, GREEDY, MAPO')
 flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action before decoding the action')
 flags.DEFINE_integer("max_api_length", 4, "Set the value based on DBEngine and QueryGenerator")
+
 # Output and Evaluation Specifications
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
 flags.DEFINE_boolean("bleu_score", True, 'if True, uses BLUE word score to compute best model')
@@ -61,7 +62,7 @@ def get_params():
 def print_params(logging, args):
 
 	if args.beam == False:
-			args.beam_width = 1
+		args.beam_width = 1
 	
 	args.constraint == False
 

@@ -884,11 +884,12 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
   # Calculate the total log probs for the new hypotheses
   # Final Shape: [batch_size, beam_width, vocab_size]
   # logits = tf.Print(logits, [logits[0,:]], '\nprinting logits', summarize=400)
-  step_log_probs = nn_ops.log_softmax(logits)
+  step_log_probs = math_ops.log(logits)
   # step_log_probs = tf.Print(step_log_probs, [step_log_probs[0,:]], '\nprinting step_log_probs', summarize=400)
   # step_log_probs = _mask_probs(step_log_probs, end_token, previously_finished)
   # step_log_probs = tf.Print(step_log_probs, [step_log_probs[0,:]], '\nprinting masked_log_probs', summarize=400)
   total_probs = array_ops.expand_dims(beam_state.log_probs, 2) + step_log_probs
+  # total_probs = step_log_probs
   # total_probs = tf.Print(total_probs, [total_probs[0,:]], '\nprinting total_probs', summarize=400)
 
   # Calculate the continuation lengths by adding to all continuing beams.
@@ -922,6 +923,7 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
       beam_width, dtype=dtypes.int32, name="beam_width")
   next_beam_scores, word_indices = nn_ops.top_k(scores_flat, k=next_beam_size)
 
+  # word_indices = tf.Print(word_indices, [word_indices[0,:]], '\nprinting word_indices', summarize=30)
 
   next_beam_scores.set_shape([static_batch_size, beam_width])
   word_indices.set_shape([static_batch_size, beam_width])
@@ -934,8 +936,8 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
       range_size=beam_width * vocab_size,
       gather_shape=[-1],
       name="next_beam_probs")
-  # next_beam_probs = tf.Print(next_beam_probs, [next_beam_probs[0,:]], '\nprinting next_beam_probs', summarize=400)
-  
+  # next_beam_probs = tf.Print(next_beam_probs, [next_beam_probs[0,:]], '\nprinting next_beam_probs', summarize=30)
+
   # Note: just doing the following
   #   math_ops.to_int32(word_indices % vocab_size,
   #       name="next_beam_word_ids")
@@ -948,8 +950,8 @@ def _beam_search_step(time, logits, next_cell_state, beam_state, batch_size,
   next_word_ids = math_ops.to_int32(raw_next_word_ids)
   next_beam_ids = math_ops.to_int32(word_indices / vocab_size, name="next_beam_parent_ids")
 
-  # next_word_ids = tf.Print(next_word_ids, [next_word_ids], '\nprinting next_word_ids', summarize=8)
-  # next_beam_ids = tf.Print(next_beam_ids, [next_beam_ids], '\nprinting next_beam_ids', summarize=8)
+  # next_word_ids = tf.Print(next_word_ids, [next_word_ids], '\nprinting next_word_ids', summarize=30)
+  # next_beam_ids = tf.Print(next_beam_ids, [next_beam_ids], '\nprinting next_beam_ids', summarize=30)
 
   # Append new ids to current predictions
   previously_finished = _tensor_gather_helper(
