@@ -1,5 +1,6 @@
 import sys
 import copy
+import math
 import random
 import db_engine
 import numpy as np
@@ -77,14 +78,22 @@ def get_reward_and_results(db_engine, query, is_valid_query, next_entities_in_di
 		select_fields, db_results, result_entities_set = db_engine.execute(query)
 		if len(db_results)==0:
 			reward = NO_RES
+
 		else:
 			match = 0
 			for next_entity in next_entities_in_dialog:
 				if next_entity in result_entities_set:
 					match += 1
+			
+			# there are some cases where 
+			# 	1. there arnt any entities in the rest of the dialog
+			#   2. there are no matches from the results
+			# in those cases we make reward as NO_RES
+
 			if len(next_entities_in_dialog) == 0 or match == 0:
-				reward = 0.0
+				reward = NO_RES
 			else:
+				# Place to modify reward function
 				recall = float(match/len(next_entities_in_dialog))
 				precision = float(match/len(result_entities_set))
 				reward = REWARD_WEIGHT*(2*recall*precision)/(recall+precision)
@@ -92,6 +101,8 @@ def get_reward_and_results(db_engine, query, is_valid_query, next_entities_in_di
 		select_fields = []
 		db_results = []
 		reward = INVALID
+
+	reward = math.exp(reward) - 1
 
 	return reward, select_fields, db_results
 
@@ -143,7 +154,6 @@ def get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total
 	action_emb = action_emb + [rl_idx['PAD']]*pad
 
 	reward = get_reward_for_query(query, cache_key_prefix, db_engine, next_entities_in_dialog)
-	reward = reward*(4-no_of_dontcares)
 	
 	return action, action_emb, [action_size], [reward]
 
@@ -268,8 +278,6 @@ def process_action_beam(action_beam, action_length, args, glob, rl_oov_words, ba
 	reward, select_fields, db_results = get_reward_and_results(db_engine, action_surface_form, is_valid_query, next_entities_in_dialog)
 	formatted_results = db_engine.get_formatted_results(select_fields, db_results)
 
-	reward = reward*(4-no_of_dontcares)
-
 	# changed valid_query condition
 	# the query should have atleast one result
 	if len(formatted_results) > 0: 
@@ -373,7 +381,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				unclipped_mapo_pi_b = np.sum(buffer_probs)
 				
 				
-				reward_weight = 1
+				reward_ration_weight = 1
 				if unclipped_mapo_pi_b < MAPO_ALPHA:
 					'''
 					if unclipped_mapo_pi_b == 0:
@@ -382,12 +390,13 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 							buffer_probs[i] = equal_prob
 						unclipped_mapo_pi_b = MAPO_ALPHA
 					else:
-						reward_weight = MAPO_ALPHA/unclipped_mapo_pi_b
+						reward_ration_weight = MAPO_ALPHA/unclipped_mapo_pi_b
 					'''
-					reward_weight = MAPO_ALPHA/unclipped_mapo_pi_b
+					reward_ration_weight = MAPO_ALPHA/unclipped_mapo_pi_b
 
 				mapo_pi_b = max(unclipped_mapo_pi_b, MAPO_ALPHA)
 				
+				'''
 				# print top 10 high recall queries
 				if batch_index == 0:
 					#print("buffer_log_probs", buffer_log_probs)
@@ -399,13 +408,14 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					indices = [i for i in range(len(high_recall_queries))]
 					sortedRes = sorted(zip(normalized_buffer_prob, high_recall_queries, indices), key=lambda x: x[0], reverse=True)
 					print("------- Buffer ---------")
-					#print("reward_weight", reward_weight)
+					#print("reward_ration_weight", reward_ration_weight)
 					for i, res in enumerate(sortedRes):
 						action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(res[2])
 						if i == 20:
 							break
 						print(res[0], res[1], reward[0])
 					print("-------------------------")
+				'''
 
 				# push all the high recall queries into batched_actions_and_rewards
 
@@ -413,7 +423,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(i)
 					total_high_recall_actions_rewards+= reward[0]
 					
-					reward[0] *= reward_weight*buffer_probs[i]
+					reward[0] *= reward_ration_weight*buffer_probs[i]
 					
 					batched_actions_and_rewards[i].add_entry(
 						copy.deepcopy(action), copy.deepcopy(action_emb_lookup), copy.deepcopy(action_size), copy.deepcopy(reward))
@@ -469,12 +479,14 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 			K = total_width - queries_added
 			one_minus_mapo_pi_b_by_K = (1-mapo_pi_b)/K
 
+			## this snippet prints the predicted beams
 			if batch_index == 0:
 				predict_buffer_log_probs = []
 				loop_count = len(action_beams[batch_index])//batch_size
 				last_batch_count = len(action_beams[batch_index])%batch_size
 				
 				prob_actions_and_rewards = ActionsAndRewards()
+				in_buffer = []
 				for beam_index in range(beam_width):
 					pred_action_length = 0
 					if args.fixed_length_decode:
@@ -482,7 +494,12 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query = process_action_beam(action_beams[batch_index][beam_index], pred_action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
 					prob_actions_and_rewards.add_entry(
 							np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)*one_minus_mapo_pi_b_by_K]))
-
+					
+					if action_surface_form in high_recall_queries:
+						in_buffer.append('1')
+					else:
+						in_buffer.append('.')
+					
 				api_prob_batch = Batch(data, None, args, glob, repeatCopyMode=True, batchToCopy=batch, indexToCopy=batch_index, noOfCopies=len(prob_actions_and_rewards.actions))
 				predict_buffer_log_probs = model.api_prob(api_prob_batch, prob_actions_and_rewards)
 				
@@ -498,12 +515,12 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 							word_form = glob['idx_rl'][word_id]
 							action_surface_form += " " + word_form
 
-					print(predict_buffer_probs[beam_index], action_surface_form, prob_actions_and_rewards.rewards[beam_index][0]*one_minus_mapo_pi_b_by_K)
+					print("%s\t%.3f\t%9.3f\t%s" % (in_buffer[beam_index],predict_buffer_probs[beam_index],prob_actions_and_rewards.rewards[beam_index][0], action_surface_form))
 				print("---------------------------------")
 				print("")
 
 			for beam_index in range(beam_width):
-				
+					
 				if queries_added == total_width:
 					break
 				
@@ -512,6 +529,17 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					pred_action_length = pred_action_lengths[batch_index][beam_index]
 
 				high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query = process_action_beam(action_beams[batch_index][beam_index], pred_action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
+				
+				#if batch_index == 0:
+				'''
+				if beam_index == 0:
+					print("---------------------------------")
+					print("GT:", rlData[dialog_id][turn_id]['api_call'])
+					print("PREDICT:",action_surface_form)
+					print("---------------------------------")
+					sys.stdout.flush()
+					#print(action_surface_form, float(reward))
+				'''
 				
 				if beam_index == 0:
 					total_entries += 1
@@ -526,16 +554,6 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				if action_surface_form in high_recall_queries:
 					continue
 				
-				'''
-				if batch_index == 0:
-					if beam_index == 0:
-						print("---------------------------------")
-						print("GT:", rlData[dialog_id][turn_id]['api_call'])
-						print("PREDICT:",action_surface_form)
-						print("---------------------------------")
-					print(action_surface_form, float(reward))
-				'''
-
 				# add on policy samples for mapo: outside the buffer
 				batched_actions_and_rewards[queries_added].add_entry(
 						np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)*one_minus_mapo_pi_b_by_K]))
