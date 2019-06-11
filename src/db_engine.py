@@ -208,19 +208,19 @@ class DbEngine(object):
 		if "camrest" in self.kb_file:
 			
 			# api_call dontcare east expensive
-			area = where_map["R_area"] if "R_area" in where_map.keys() else "dontcare"
-			food  = where_map["R_food"] if "R_food" in where_map.keys() else "dontcare"
-			pricerange  = where_map["R_pricerange"] if "R_pricerange" in where_map.keys() else "dontcare"
+			area = where_map["R_area"] if "R_area" in where_map.keys() else "dontcare1"
+			food  = where_map["R_food"] if "R_food" in where_map.keys() else "dontcare2"
+			pricerange  = where_map["R_pricerange"] if "R_pricerange" in where_map.keys() else "dontcare3"
 
 			api_call = "api_call " + food + " " + area + " " + pricerange 
 		
 		elif "babi" in self.kb_file:
 			
 			# api_call japanese bangkok eight moderate
-			cuisine = where_map["R_cuisine"] if "R_cuisine" in where_map.keys() else "dontcare"
-			location = where_map["R_location"] if "R_location" in where_map.keys() else "dontcare"
-			number = where_map["R_number"] if "R_number" in where_map.keys() else "dontcare"
-			price = where_map["R_price"] if "R_price" in where_map.keys() else "dontcare"
+			cuisine = where_map["R_cuisine"] if "R_cuisine" in where_map.keys() else "dontcare1"
+			location = where_map["R_location"] if "R_location" in where_map.keys() else "dontcare2"
+			number = where_map["R_number"] if "R_number" in where_map.keys() else "dontcare3"
+			price = where_map["R_price"] if "R_price" in where_map.keys() else "dontcare4"
 			
 			api_call = "api_call " + cuisine + " " + location + " " + number + " " + price
 				
@@ -237,17 +237,28 @@ class DbEngine(object):
 			
 		if "camrest" in self.kb_file:
 			
+			'''
 			if api_call_arr[1] != "dontcare": where_clauses.append('R_food ' + api_call_arr[1])
 			if api_call_arr[2] != "dontcare": where_clauses.append('R_area ' + api_call_arr[2])
 			if api_call_arr[3] != "dontcare": where_clauses.append('R_pricerange ' + api_call_arr[3])
-		
+			'''
+			if not api_call_arr[1].startswith("dontcare"): where_clauses.append('R_food ' + api_call_arr[1])
+			if not api_call_arr[2].startswith("dontcare"): where_clauses.append('R_area ' + api_call_arr[2])
+			if not api_call_arr[3].startswith("dontcare"): where_clauses.append('R_pricerange ' + api_call_arr[3])
+
 		elif "babi" in self.kb_file:
 			
+			'''
 			if api_call_arr[1] != "dontcare": where_clauses.append('R_cuisine ' + api_call_arr[1])
 			if api_call_arr[2] != "dontcare": where_clauses.append('R_location ' + api_call_arr[2])
 			if api_call_arr[3] != "dontcare": where_clauses.append('R_number ' + api_call_arr[3])
 			if api_call_arr[4] != "dontcare": where_clauses.append('R_price ' + api_call_arr[4])
-		
+			'''
+			if not api_call_arr[1].startswith("dontcare"): where_clauses.append('R_cuisine ' + api_call_arr[1])
+			if not api_call_arr[2].startswith("dontcare"): where_clauses.append('R_location ' + api_call_arr[2])
+			if not api_call_arr[3].startswith("dontcare"): where_clauses.append('R_number ' + api_call_arr[3])
+			if not api_call_arr[4].startswith("dontcare"): where_clauses.append('R_price ' + api_call_arr[4])
+
 		else:
 			
 			print("ERROR: Unknown KB File in DbEngine")
