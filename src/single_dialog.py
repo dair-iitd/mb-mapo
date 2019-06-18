@@ -100,26 +100,26 @@ class chatBot(object):
 		n_train = len(Data_train.stories)
 		print("Training Size", n_train)
 
-		# Data_val = Data(self.valData, args, glob)
-		# n_val = len(Data_val.stories)
-		# print("Validation Size", n_val)
+		Data_val = Data(self.valData, args, glob)
+		n_val = len(Data_val.stories)
+		print("Validation Size", n_val)
 
-		# Data_test = Data(self.testData, args, glob)
-		# n_test = len(Data_test.stories)
-		# print("Test Size", n_test)
+		Data_test = Data(self.testData, args, glob)
+		n_test = len(Data_test.stories)
+		print("Test Size", n_test)
 
-		# if args.task_id < 6:
-		# 	Data_test_OOV = Data(self.testOOVData, args, glob)
-		# 	n_oov = len(Data_test_OOV.stories)
-		# 	print("Test OOV Size", n_oov)
-		# sys.stdout.flush()
+		if args.task_id < 6:
+			Data_test_OOV = Data(self.testOOVData, args, glob)
+			n_oov = len(Data_test_OOV.stories)
+			print("Test OOV Size", n_oov)
+		sys.stdout.flush()
 
 		# Create Batches
 		batches_train = create_batches(Data_train, args.batch_size, self.RLtrainData)
-		# batches_val = create_batches(Data_val, args.batch_size, self.RLvalData)
-		# batches_test = create_batches(Data_test, args.batch_size, self.RLtestData)
-		# if args.task_id < 6:
-		# 	batches_oov = create_batches(Data_test_OOV, args.batch_size, self.RLtestOOVData)
+		batches_val = create_batches(Data_val, args.batch_size, self.RLvalData)
+		batches_test = create_batches(Data_test, args.batch_size, self.RLtestData)
+		if args.task_id < 6:
+			batches_oov = create_batches(Data_test_OOV, args.batch_size, self.RLtestOOVData)
 
 		# Look for previously saved checkpoint
 		if args.save:
@@ -158,86 +158,86 @@ class chatBot(object):
 				total_loss = total_cost_post 
 			
 			
-			# # Evaluate Model	
-			# if epoch % args.evaluation_interval == 0:
-			# 	print('*Predict Train*'); sys.stdout.flush()
-			# 	train_accuracies = self.batch_predict(Data_train, batches_train, self.RLtrainData)
-			# 	print('*Predict Validation*'); sys.stdout.flush()
-			# 	val_accuracies = self.batch_predict(Data_val, batches_val, self.RLvalData)
-			# 	print('-----------------------')
-			# 	print('SUMMARY')
-			# 	print('PHASE {}'.format(self.model.phase))
-			# 	print('Epoch {}'.format(epoch))
-			# 	print('Loss: {}'.format(total_loss))
-			# 	if args.bleu_score:
-			# 		print('{0:30} : {1:6f}'.format("Train BLEU", train_accuracies['bleu']))
-			# 	print('{0:30} : {1:6f}'.format("Train Accuracy", train_accuracies['acc']))
-			# 	print('{0:30} : {1:6f}'.format("Train Dialog", train_accuracies['dialog']))
-			# 	print('{0:30} : {1:6f}'.format("Train F1", train_accuracies['f1']))
-			# 	print('{0:30} : {1:6f}'.format("Train API Match", train_accuracies['api']))
-			# 	print('------------')
-			# 	if args.bleu_score:
-			# 		print('{0:30} : {1:6f}'.format("Validation BLEU", val_accuracies['bleu']))
-			# 	print('{0:30} : {1:6f}'.format("Validation Accuracy", val_accuracies['acc']))
-			# 	print('{0:30} : {1:6f}'.format("Validation Dialog", val_accuracies['dialog']))
-			# 	print('{0:30} : {1:6f}'.format("Validation F1", val_accuracies['f1']))
-			# 	print('{0:30} : {1:6f}'.format("Validation API Match", val_accuracies['api']))
+			# Evaluate Model	
+			if epoch % args.evaluation_interval == 0:
+				print('*Predict Train*'); sys.stdout.flush()
+				train_accuracies = self.batch_predict(Data_train, batches_train, self.RLtrainData)
+				print('*Predict Validation*'); sys.stdout.flush()
+				val_accuracies = self.batch_predict(Data_val, batches_val, self.RLvalData)
+				print('-----------------------')
+				print('SUMMARY')
+				print('PHASE {}'.format(self.model.phase))
+				print('Epoch {}'.format(epoch))
+				print('Loss: {}'.format(total_loss))
+				if args.bleu_score:
+					print('{0:30} : {1:6f}'.format("Train BLEU", train_accuracies['bleu']))
+				print('{0:30} : {1:6f}'.format("Train Accuracy", train_accuracies['acc']))
+				print('{0:30} : {1:6f}'.format("Train Dialog", train_accuracies['dialog']))
+				print('{0:30} : {1:6f}'.format("Train F1", train_accuracies['f1']))
+				print('{0:30} : {1:6f}'.format("Train API Match", train_accuracies['api']))
+				print('------------')
+				if args.bleu_score:
+					print('{0:30} : {1:6f}'.format("Validation BLEU", val_accuracies['bleu']))
+				print('{0:30} : {1:6f}'.format("Validation Accuracy", val_accuracies['acc']))
+				print('{0:30} : {1:6f}'.format("Validation Dialog", val_accuracies['dialog']))
+				print('{0:30} : {1:6f}'.format("Validation F1", val_accuracies['f1']))
+				print('{0:30} : {1:6f}'.format("Validation API Match", val_accuracies['api']))
 
-			# 	print('------------')
-			# 	sys.stdout.flush()
+				print('------------')
+				sys.stdout.flush()
 				
-			# 	if self.model.phase == 2:
-			# 		loss_metric = 1.0 - api_metric
-			# 	else:
-			# 		loss_metric = total_loss
-			# 	loss_buffer.append(loss_metric)
-			# 	if (len(loss_buffer) == 6 and args.rl) or loss_metric == 0.0:
-			# 		val = loss_buffer.popleft()
-			# 		if val < loss_metric or loss_metric == 0.0:
-			# 			if (self.model.phase == 2 and glob['valid_query']) or self.model.phase == 1:
-			# 				self.model.phase += 1
-			# 				print("PHASE change to {}".format(self.model.phase))
-			# 				self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
-			# 				print('MODEL SAVED')
-			# 				test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True)
-			# 				best_validation_accuracy = 0.0
-			# 				loss_buffer = deque()
-			# 				if self.model.phase == 2:
-			# 					glob['valid_query'] = False
-			# 				continue
+				if self.model.phase == 2:
+					loss_metric = 1.0 - api_metric
+				else:
+					loss_metric = total_loss
+				loss_buffer.append(loss_metric)
+				if (len(loss_buffer) == 6 and args.rl) or loss_metric == 0.0:
+					val = loss_buffer.popleft()
+					if val < loss_metric or loss_metric == 0.0:
+						if (self.model.phase == 2 and glob['valid_query']) or self.model.phase == 1:
+							self.model.phase += 1
+							print("PHASE change to {}".format(self.model.phase))
+							self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
+							print('MODEL SAVED')
+							test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True)
+							best_validation_accuracy = 0.0
+							loss_buffer = deque()
+							if self.model.phase == 2:
+								glob['valid_query'] = False
+							continue
 
-			# 	# Save best model
-			# 	val_to_compare = val_accuracies['comp']
-			# 	if val_to_compare > best_validation_accuracy:
-			# 		best_validation_accuracy = val_to_compare
-			# 		self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
-			# 		print('MODEL SAVED')
-			# 		# test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True)
+				# Save best model
+				val_to_compare = val_accuracies['comp']
+				if val_to_compare > best_validation_accuracy:
+					best_validation_accuracy = val_to_compare
+					self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
+					print('MODEL SAVED')
+					# test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True)
 				
-			# 		print('Predict Test'); sys.stdout.flush()
-			# 		test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData)
-			# 		if args.task_id < 6:
-			# 			print('\nPredict OOV'); sys.stdout.flush()
-			# 			test_oov_accuracies = self.batch_predict(Data_test_OOV, batches_oov, self.RLtestOOVData)
+					# print('Predict Test'); sys.stdout.flush()
+					# test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData)
+					# if args.task_id < 6:
+					# 	print('\nPredict OOV'); sys.stdout.flush()
+					# 	test_oov_accuracies = self.batch_predict(Data_test_OOV, batches_oov, self.RLtestOOVData)
 					
-			# 		print('-----------------------')
-			# 		print('SUMMARY')
-			# 		if args.bleu_score:
-			# 			print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))
-			# 		print('{0:30} : {1:6f}'.format("Test Accuracy", test_accuracies['acc']))
-			# 		print('{0:30} : {1:6f}'.format("Test Dialog", test_accuracies['dialog']))
-			# 		print('{0:30} : {1:6f}'.format("Test F1", test_accuracies['f1']))
-			# 		print('{0:30} : {1:6f}'.format("Test API Match", test_accuracies['api']))
-			# 		if args.task_id < 6:
-			# 			print('------------')
-			# 			if args.bleu_score:
-			# 				print('{0:30} : {1:6f}'.format("Test OOV BLEU", test_oov_accuracies['bleu']))
-			# 			print('{0:30} : {1:6f}'.format("Test OOV Accuracy", test_oov_accuracies['acc']))
-			# 			print('{0:30} : {1:6f}'.format("Test OOV Dialog", test_oov_accuracies['dialog']))
-			# 			print('{0:30} : {1:6f}'.format("Test OOV F1", test_oov_accuracies['f1']))
-			# 			print('{0:30} : {1:6f}'.format("Test OOV API Match", test_oov_accuracies['api']))
-			# 		print('-----------------------')
-			# 		sys.stdout.flush()
+					# print('-----------------------')
+					# print('SUMMARY')
+					# if args.bleu_score:
+					# 	print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))
+					# print('{0:30} : {1:6f}'.format("Test Accuracy", test_accuracies['acc']))
+					# print('{0:30} : {1:6f}'.format("Test Dialog", test_accuracies['dialog']))
+					# print('{0:30} : {1:6f}'.format("Test F1", test_accuracies['f1']))
+					# print('{0:30} : {1:6f}'.format("Test API Match", test_accuracies['api']))
+					# if args.task_id < 6:
+					# 	print('------------')
+					# 	if args.bleu_score:
+					# 		print('{0:30} : {1:6f}'.format("Test OOV BLEU", test_oov_accuracies['bleu']))
+					# 	print('{0:30} : {1:6f}'.format("Test OOV Accuracy", test_oov_accuracies['acc']))
+					# 	print('{0:30} : {1:6f}'.format("Test OOV Dialog", test_oov_accuracies['dialog']))
+					# 	print('{0:30} : {1:6f}'.format("Test OOV F1", test_oov_accuracies['f1']))
+					# 	print('{0:30} : {1:6f}'.format("Test OOV API Match", test_oov_accuracies['api']))
+					# print('-----------------------')
+					# sys.stdout.flush()
 			
 	def test(self):
 		'''
