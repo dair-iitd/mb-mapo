@@ -760,7 +760,7 @@ class BeamSearchDecoder(decoder.Decoder):
 
         return final_dists, vocab_dists_extended, next_state_ids
 
-  def step(self, time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size, name=None):
+  def step(self, time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size, rl, name=None):
     """Perform a decoding step.
 
     Args:
@@ -785,11 +785,22 @@ class BeamSearchDecoder(decoder.Decoder):
                                       self._cell.state_size)
 
       new_batch_size = ops.convert_to_tensor([batch_size*beam_width], name="new_batch_size") 
-      pos = ops.convert_to_tensor([time], name="pos") 
-      positions = tf.tile(pos, new_batch_size)
-      position_emb = self._pos_embedding_fn(positions)
-      inputs = (inputs, position_emb)
+      # if rl:
+      #   pos = ops.convert_to_tensor([time], name="pos") 
+      #   positions = tf.tile(pos, new_batch_size)
+      #   position_emb = self._pos_embedding_fn(positions)
+      #   inputs = (inputs, tf.constant(5), position_emb)
+      # else:
+      #   inputs = (inputs, tf.constant(0), inputs)
       
+      if rl:
+        pos = ops.convert_to_tensor([time], name="pos") 
+        positions = tf.tile(pos, new_batch_size)
+        position_emb = self._pos_embedding_fn(positions)
+        inputs = (inputs, position_emb)
+      else:
+        inputs = (inputs, inputs)
+
       cell_outputs, next_cell_state = self._cell(inputs, cell_state)
       (cell_outputs, attention, p_gens) = cell_outputs
 

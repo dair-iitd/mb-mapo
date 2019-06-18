@@ -140,7 +140,7 @@ class chatBot(object):
 			print('************************')
 			print('Epoch {}'.format(epoch)); sys.stdout.flush()
 			
-			if self.model.phase >= 10:
+			if self.model.phase >= 1:
 				total_cost_pre = self.batch_train(Data_train, batches_train[0])					
 				print('Total Cost Pre: {}'.format(total_cost_pre)); sys.stdout.flush()
 				total_loss = total_cost_pre
@@ -152,7 +152,7 @@ class chatBot(object):
 				print('Total Reward: {}'.format(total_reward)); sys.stdout.flush()
 				print('Valid Queries: {}'.format(api_metric)); sys.stdout.flush()
 			
-			if (args.rl and self.model.phase >= 30):
+			if (args.rl and self.model.phase >= 3):
 				total_cost_post = self.batch_train(Data_train, batches_train[0] + batches_train[2] , Data_train.responses)		
 				print('Total Cost Post: {}'.format(total_cost_post)); sys.stdout.flush()
 				total_loss = total_cost_post 

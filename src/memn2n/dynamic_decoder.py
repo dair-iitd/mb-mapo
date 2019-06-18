@@ -259,7 +259,7 @@ class BasicDecoder(Decoder):
 		"""
 		return self._helper.initialize() + (self._initial_state,) + (self._initial_ids,) + (self._state_ids,)
 
-	def step(self, time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size, name=None):
+	def step(self, time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size, rl, name=None):
 		"""Perform a decoding step.
 		Args:
 			time: scalar `int32` tensor.
@@ -272,12 +272,31 @@ class BasicDecoder(Decoder):
 		with ops.name_scope(name, "BasicDecoderStep", (time, inputs, state)):
 			# inputs = tf.Print(inputs, [inputs], 'printing inputs', summarize=1000)
 			new_batch_size = ops.convert_to_tensor([batch_size], name="new_batch_size") 
-			pos = ops.convert_to_tensor([time], name="pos") 
-			positions = tf.tile(pos, new_batch_size)
-			# positions = tf.Print(positions, [positions], '\nprinting positions', summarize=400)
-			position_emb = self._pos_embedding_fn(positions)
-			# position_emb = tf.Print(position_emb, [position_emb], '\nprinting position_emb', summarize=400)
-			inputs = (inputs, position_emb)
+
+			# if rl:
+			# 	pos = ops.convert_to_tensor([time], name="pos") 
+			# 	positions = tf.tile(pos, new_batch_size)
+			# 	# positions = tf.Print(positions, [positions], '\nprinting positions', summarize=400)
+			# 	position_emb = self._pos_embedding_fn(positions)
+			# 	# position_emb = tf.Print(position_emb, [position_emb], '\nprinting position_emb', summarize=400)
+			# 	inputs = (inputs, position_emb)
+			# else:
+			# 	inputs = (inputs, tf.constant(False))
+
+			# if rl:
+			# 	pos = ops.convert_to_tensor([time], name="pos") 
+			# 	positions = tf.tile(pos, new_batch_size)
+			# 	position_emb = self._pos_embedding_fn(positions)
+			# 	cell_input_fn = (lambda inputs, attention: array_ops.concat([inputs, attention], -1))
+			# 	inputs = cell_input_fn(inputs, position_emb)
+
+			if rl:
+				pos = ops.convert_to_tensor([time], name="pos") 
+				positions = tf.tile(pos, new_batch_size)
+				position_emb = self._pos_embedding_fn(positions)
+				inputs = (inputs, position_emb)
+			else:
+				inputs = (inputs, inputs)
 
 			cell_outputs, cell_state = self._cell(inputs, state)
 			(cell_outputs, attention, p_gens) = cell_outputs
@@ -315,6 +334,7 @@ def dynamic_decode(decoder,
 				   decoder_vocab_size,
 				   oov_sizes,
 				   oov_ids,
+				   rl=False,
 				   output_time_major=False,
 				   impute_finished=False,
 				   maximum_iterations=None,
@@ -425,7 +445,7 @@ def dynamic_decode(decoder,
 			# inputs = tf.Print(inputs, [inputs], 'printing inputs', summarize=1000)
 
 			(next_outputs, next_p_gens, decoder_state, next_inputs, decoder_finished, next_ids, next_state_ids) = \
-					decoder.step(time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size)
+					decoder.step(time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size, rl)
 			
 			# next_p_gens = tf.Print(next_p_gens, [next_p_gens], 'printing next_p_gens', summarize=1000)
 			# next_inputs = tf.Print(next_inputs, [next_inputs], 'printing next_inputs', summarize=1000)
