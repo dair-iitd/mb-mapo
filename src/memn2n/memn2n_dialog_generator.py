@@ -66,6 +66,7 @@ class MemN2NGeneratorDialog(object):
 		self._state_mask = glob['state_mask']
 		self._constraint = args.constraint
 		self._rl_mode = args.rl_mode 
+		self._split_emb = args.split_emb
 
 		self.phase = args.phase
 
@@ -91,7 +92,13 @@ class MemN2NGeneratorDialog(object):
 		self._build_vars()
 
 		## Encoding ##
-		encoder_states, line_memory, word_memory = self._encoder(self._stories, self._queries)
+		encoder_states, line_memory, word_memory = self._encoder(self._stories, self._queries, emb=self.A)
+
+		if self._rl:
+			if self._split_emb:
+				encoder_states_rl, line_memory, word_memory = self._encoder(self._stories, self._queries, emb=self.B)
+			else:
+				encoder_states_rl, line_memory, word_memory = self._encoder(self._stories, self._queries, emb=self.A)
 
 		## Predicting ##
 		self.predict_op = self._decoder_predict(encoder_states, line_memory, word_memory)
@@ -107,13 +114,13 @@ class MemN2NGeneratorDialog(object):
 
 		if self._rl:
 			## Predicting ##
-			self.rl_predict_op = self._decoder_predict_rl(encoder_states, line_memory, word_memory)
+			self.rl_predict_op = self._decoder_predict_rl(encoder_states_rl, line_memory, word_memory)
 
 			## Training ##
-			self.rl_loss_op, rl_logits, rl_p_gens = self._decoder_train_rl(encoder_states, line_memory, word_memory)
+			self.rl_loss_op, rl_logits, rl_p_gens = self._decoder_train_rl(encoder_states_rl, line_memory, word_memory)
 
 			## Probability Scores ##
-			self.prob_op = self._decoder_prob_rl(encoder_states, line_memory, word_memory)
+			self.prob_op = self._decoder_prob_rl(encoder_states_rl, line_memory, word_memory)
 
 			# Gradient Pipeline
 			rl_grads_and_vars = self._opt.compute_gradients(self.rl_loss_op)
@@ -172,6 +179,10 @@ class MemN2NGeneratorDialog(object):
 			# Initialize Embedding for Encoder
 			A = tf.concat([nil_word_slot, self._init([self._vocab_size-1, self._embedding_size])], 0)
 			self.A = tf.Variable(A, name="A")
+
+			# Initialize Embedding for RL Encoder
+			B = tf.concat([nil_word_slot, self._init([self._vocab_size-1, self._embedding_size])], 0)
+			self.B = tf.Variable(A, name="B")
 			
 			# Initialize Embedding for Response-Decoder
 			C = tf.concat([nil_word_slot, self._init([self._decoder_vocab_size-1, self._embedding_size])], 0)
@@ -205,15 +216,15 @@ class MemN2NGeneratorDialog(object):
 					if self._fixed_length_decode:
 						self.action_length_ff_layer = tf.Variable(self._init([self._embedding_size, self._rl_decode_length_classes_count]), name="length_ff")
 
-		self._nil_vars = set([self.A.name, self.C.name])
+		self._nil_vars = set([self.A.name, self.B.name, self.C.name])
 		if self._rl:
 			self._nil_vars.add(self.R.name)
 
 	###################################################################################################
 	#########                                  	  Encoder                                    ##########
-	###################################################################################################
+	########################s###########################################################################
 
-	def _encoder(self, stories, queries):
+	def _encoder(self, stories, queries, emb):
 		'''
 			Arguments:
 				stories 	-	batch_size x memory_size x sentence_size
@@ -231,7 +242,7 @@ class MemN2NGeneratorDialog(object):
 
 			### Transform Queries ###
 			# query_emb : batch_size x sentence_size x embedding_size
-			query_emb = tf.nn.embedding_lookup(self.A, queries)
+			query_emb = tf.nn.embedding_lookup(emb, queries)
 
 			query_sizes = tf.reshape(self._query_sizes, [-1])
 			with tf.variable_scope("encoder"):
@@ -243,7 +254,7 @@ class MemN2NGeneratorDialog(object):
 			
 			### Transform Stories ###
 			# memory_word_emb : batch_size x memory_size x sentence_size x embedding_size
-			memory_word_emb = tf.nn.embedding_lookup(self.A, stories)
+			memory_word_emb = tf.nn.embedding_lookup(emb, stories)
 			memory_emb = tf.reshape(memory_word_emb, [-1, self._sentence_size, self._embedding_size])
 
 			sentence_sizes = tf.reshape(self._sentence_sizes, [-1])
