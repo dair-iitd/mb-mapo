@@ -49,6 +49,9 @@ class ActionsAndRewards(object):
 		self._actions_emb_lookup.append(action_emb_lookup)
 		self._action_sizes.append(action_sizes)
 		self._rewards.append(reward)
+	
+	def get_length(self):
+		return len(self._actions)
 
 	def get(self, index):
 		return self._actions[index], self._actions_emb_lookup[index], self._action_sizes[index], self._rewards[index]
@@ -102,7 +105,7 @@ def get_reward_and_results(db_engine, query, is_valid_query, next_entities_in_di
 		db_results = []
 		reward = INVALID
 
-	reward = math.exp(reward) - 1
+	#reward = math.exp(reward) - 1
 
 	return reward, select_fields, db_results
 
@@ -163,9 +166,23 @@ def queries_to_actions_and_rewards(queries, rl_idx, max_api_length, rl_oov_word_
 	
 	buffer_actions_and_rewards = ActionsAndRewards()
 	
-	for query in queries:
-		action, action_emb, action_size, reward = get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
-		buffer_actions_and_rewards.add_entry(np.array(action), np.array(action_emb), np.array([action_size[0]]), np.array([float(reward[0])]))
+	# modifed version of MAPO
+	# only high reward queries
+	all_rewards = []
+	best_reward = 0
+
+	# best query with best reward
+	for index, query in enumerate(queries):
+		reward = get_reward_for_query(query, cache_key_prefix, db_engine, next_entities_in_dialog)
+		all_rewards.append(reward)
+		if reward > best_reward:
+			best_reward = reward
+
+	for index, query in enumerate(queries):
+		if all_rewards[index] == best_reward:
+			#print(index, query)
+			action, action_emb, action_size, reward = get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
+			buffer_actions_and_rewards.add_entry(np.array(action), np.array(action_emb), np.array([action_size[0]]), np.array([float(reward[0])]))
 
 	return buffer_actions_and_rewards
 
@@ -361,8 +378,11 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				high_recall_actions_and_rewards = queries_to_actions_and_rewards(high_recall_queries, glob['rl_idx'], max_api_length, rl_oov_words[batch_index], total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
 				
 				buffer_log_probs = []
-				loop_count = len(high_recall_queries)//batch_size
-				last_batch_count = len(high_recall_queries)%batch_size
+
+				no_of_high_recall_actions = high_recall_actions_and_rewards.get_length()
+
+				loop_count = no_of_high_recall_actions//batch_size
+				last_batch_count = no_of_high_recall_actions%batch_size
 				
 				if loop_count > 0:
 					api_prob_batch = Batch(data, None, args, glob, repeatCopyMode=True, batchToCopy=batch, indexToCopy=batch_index, noOfCopies=batch_size)
@@ -373,7 +393,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				
 				if last_batch_count > 0:
 					api_prob_batch = Batch(data, None, args, glob, repeatCopyMode=True, batchToCopy=batch, indexToCopy=batch_index, noOfCopies=last_batch_count)
-					probs = model.api_prob(api_prob_batch, high_recall_actions_and_rewards.get_range(loop_count*batch_size, len(high_recall_queries), fixed_length_decode=args.fixed_length_decode, glob=glob))
+					probs = model.api_prob(api_prob_batch, high_recall_actions_and_rewards.get_range(loop_count*batch_size, no_of_high_recall_actions, fixed_length_decode=args.fixed_length_decode, glob=glob))
 					buffer_log_probs += list(probs)
 				
 				# prob of all queries in the buffer
@@ -419,7 +439,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 
 				# push all the high recall queries into batched_actions_and_rewards
 
-				for i in range(len(high_recall_queries)):
+				for i in range(no_of_high_recall_actions):
 					action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(i)
 					total_high_recall_actions_rewards+= reward[0]
 					

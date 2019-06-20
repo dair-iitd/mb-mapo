@@ -72,12 +72,12 @@ def print_params(logging, args):
 	 	args.max_api_length = 5
 	 	# as the max number of high recall quiries are 15
 	 	if args.beam == True:
-	 		args.beam_width = 30
+	 		args.beam_width = 8
 	if "camrest" in args.kb_file:
 	 	args.max_api_length = 4
 	 	# as the max number of high recall quiries are 7
 	 	if args.beam == True:
-	 		args.beam_width = 14
+	 		args.beam_width = 6
 
 	'''
 		Print important model parameters
