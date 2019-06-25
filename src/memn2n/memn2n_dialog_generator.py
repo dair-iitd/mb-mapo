@@ -43,6 +43,7 @@ class MemN2NGeneratorDialog(object):
 		# Initialize Model Variables
 		self._batch_size = args.batch_size
 		self._beam = args.beam
+		self._simple_beam = args.simple_beam
 		self._beam_width = args.beam_width
 		self._candidate_sentence_size = glob['candidate_sentence_size']
 		self._debug = args.debug
@@ -456,7 +457,7 @@ class MemN2NGeneratorDialog(object):
 		with tf.variable_scope(self._name):
 			with tf.variable_scope('decoder'):
 				batch_size = tf.shape(self._stories)[0]
-				if self._beam:
+				if self._simple_beam:
 					tiled_oov_ids = tf.contrib.seq2seq.tile_batch(self._oov_ids, multiplier=self._beam_width)
 					decoder = self._get_beam_decoder(encoder_states, line_memory, word_memory, batch_size)				
 					outputs,_ = dynamic_decode(decoder, batch_size, self._decoder_vocab_size, self._oov_sizes, tiled_oov_ids, maximum_iterations=2*self._candidate_sentence_size)

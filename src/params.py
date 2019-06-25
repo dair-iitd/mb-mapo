@@ -28,6 +28,7 @@ flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss du
 # Model Type
 flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
 flags.DEFINE_boolean("beam", True, "if True, uses beam search decoder")
+flags.DEFINE_boolean("simple_beam", False, "if True, uses beam search decoder for non rl decoding")
 flags.DEFINE_boolean("sort", False, "if True, sort db results on rating")
 flags.DEFINE_boolean("constraint", False, "if True, perform constraint decoding")
 
