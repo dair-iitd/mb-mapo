@@ -6,23 +6,23 @@ flags = tf.app.flags
 flags.DEFINE_float("epsilon", 1e-8, "Epsilon value for Adam Optimizer.")
 flags.DEFINE_float("max_grad_norm", 40.0, "Clip gradients to this norm.")
 flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
-flags.DEFINE_integer("epochs", 4000, "Number of epochs to train for.")
+flags.DEFINE_integer("epochs", 200, "Number of epochs to train for.")
 
 # Model Params
-flags.DEFINE_float("learning_rate", 0.001, "Learning rate for Adam Optimizer.")
+flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
 flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matrices.")
+flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
-flags.DEFINE_integer("beam_width", 14, "Width of Beam for BeamSearchDecoder")
-flags.DEFINE_integer("phase", 2, "Start Phase for RL training")
+flags.DEFINE_integer("beam_width", 1, "Width of Beam for BeamSearchDecoder")
+flags.DEFINE_integer("phase", 1, "Start Phase for RL training")
 
 # Entity Word Drop
 flags.DEFINE_float("word_drop_prob", 0.2, "value to set, if word_drop is set to True")
 flags.DEFINE_boolean('word_drop', True, 'if True, drop db words in story')
 
 # PGen Loss
-flags.DEFINE_float("p_gen_loss_weight", 1, 'relative weight to p_gen loss, > 1 gives more weight to p_gen loss')
+flags.DEFINE_float("p_gen_loss_weight", 1.5, 'relative weight to p_gen loss, > 1 gives more weight to p_gen loss')
 flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss during training')
 
 # Model Type
@@ -33,14 +33,14 @@ flags.DEFINE_boolean("constraint", False, "if True, perform constraint decoding"
 
 # RL Params
 flags.DEFINE_boolean("rl", True, 'if True, uses RL decoder')
-flags.DEFINE_string("rl_mode", "MAPO", 'takes the following values: GT, GREEDY, MAPO')
+flags.DEFINE_string("rl_mode", "GREEDY", 'takes the following values: GT, GREEDY, MAPO')
 flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action before decoding the action')
 flags.DEFINE_integer("max_api_length", 4, "Set the value based on DBEngine and QueryGenerator")
 flags.DEFINE_boolean("split_emb", True, "Use separate embedding for RL encoder")
 
 # Output and Evaluation Specifications
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
-flags.DEFINE_boolean("bleu_score", True, 'if True, uses BLUE word score to compute best model')
+flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score to compute best model')
 flags.DEFINE_boolean("save", False, "if True, trains using previously saved model")
 flags.DEFINE_boolean("debug", False, 'if True, enables debug mode (Verbose Errors, but slower)')
 
@@ -69,15 +69,15 @@ def print_params(logging, args):
 	args.constraint == False
 
 	if "babi" in args.kb_file:
-	 	args.max_api_length = 5
-	 	# as the max number of high recall quiries are 15
-	 	if args.beam == True:
-	 		args.beam_width = 8
+		args.max_api_length = 5
+		if args.rl_mode == 'MAPO':
+			args.beam == True
+			args.beam_width = 8
 	if "camrest" in args.kb_file:
-	 	args.max_api_length = 4
-	 	# as the max number of high recall quiries are 7
-	 	if args.beam == True:
-	 		args.beam_width = 6
+		args.max_api_length = 4
+		if args.rl_mode == 'MAPO':
+			args.beam == True
+			args.beam_width = 6
 
 	'''
 		Print important model parameters

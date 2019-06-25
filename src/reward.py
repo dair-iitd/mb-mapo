@@ -308,7 +308,7 @@ def process_action_beam(action_beam, action_length, args, glob, rl_oov_words, ba
 # GT : No decoder, the ground truth is returned
 # GREEDY : the decoder is trained with the action with highest reward in the buffer
 # MAPO : the decoder is trained using MAPOs
-def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_engine, model, args, data, output=False, mode="GT"):
+def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_engine, model, args, data, out_file=None, mode="GT"):
 	'''
 		Input: An 3D array of actions [batch_size x beam_size x action]
 			- For each action/API convert from idx to rl vocab (use glob['idx_rl'])
@@ -352,9 +352,6 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 	total_entries = 0
 	valid_entries = 0
 	perfect_match_entries = 0
-
-	if output: 
-		file = open('logs/api.txt', 'a')
 
 	batch_size = len(batch.stories)
 
@@ -475,6 +472,11 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				pred_action_length = pred_action_lengths[batch_index][0]
 			high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query = process_action_beam(action_beams[batch_index][0], pred_action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
 			
+			if out_file and batch_index == 0:
+				out_file.write('id = ' + str(dialog_id) + '\n')
+				out_file.write('gold : ' + rlData[dialog_id][turn_id]['api_call'] + '\n')
+				out_file.write('pred : ' + action_surface_form + '\n')
+
 			total_entries += 1
 			if is_valid_query:
 				total_high_probable_rewards += float(reward)
@@ -487,11 +489,13 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([reward]))
 				total_repeated_rewards += reward
 
+			'''
 			if batch_index == 0:
 				print("---------------------------------")
 				print("GT:", rlData[dialog_id][turn_id]['api_call'])
 				print("PREDICT:",action_surface_form, reward)
 				print("---------------------------------")
+			'''
 		else:
 			# MAPO
 
@@ -500,6 +504,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 			one_minus_mapo_pi_b_by_K = (1-mapo_pi_b)/K
 
 			## this snippet prints the predicted beams
+			'''
 			if batch_index == 0:
 				predict_buffer_log_probs = []
 				loop_count = len(action_beams[batch_index])//batch_size
@@ -538,6 +543,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					print("%s\t%.3f\t%9.3f\t%s" % (in_buffer[beam_index],predict_buffer_probs[beam_index],prob_actions_and_rewards.rewards[beam_index][0], action_surface_form))
 				print("---------------------------------")
 				print("")
+			'''
 
 			for beam_index in range(beam_width):
 					
@@ -567,9 +573,13 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					if len(formatted_results) > 0:
 						valid_entries += 1
 					perfect_match_entries += is_perfect_match(db_engine, rlData[dialog_id][turn_id]['api_call'], action_surface_form)
-				
-				if beam_index == 0:
+
 					batched_db_results.append(formatted_results)
+
+					if out_file and batch_index == 0:
+						out_file.write('id = ' + str(dialog_id) + '\n')
+						out_file.write('gold : ' + rlData[dialog_id][turn_id]['api_call'] + '\n')
+						out_file.write('pred : ' + action_surface_form + '\n')
 					
 				if action_surface_form in high_recall_queries:
 					continue

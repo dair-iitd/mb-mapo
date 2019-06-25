@@ -1,3 +1,4 @@
+import os
 import json
 import numpy as np 
 from measures import moses_multi_bleu
@@ -100,22 +101,27 @@ def get_tokenized_response_from_padded_vector(vector, word_map, oov):
 		else:				final.append('UNK')
 	return ' '.join(final)
 
-def BLEU(preds, golds, word_map, did, oovs, output=False):
+def BLEU(preds, golds, word_map, did, oovs, output=False, run_id="", epoch_str=""):
 	tokenized_preds = []
 	tokenized_golds = []
 
 	if output:
-		file = open('logs/predictions.txt', 'w+')
+		dirName = 'logs/preds/'+run_id
+		if not os.path.exists(dirName):
+			os.mkdir(dirName)
+		file = open(dirName+'/'+epoch_str+'.log', 'w+')
 	for i, (pred, gold) in enumerate(zip(preds, golds)):
 		pred = get_tokenized_response_from_padded_vector(pred, word_map, oovs[did[i]])
 		gold = get_tokenized_response_from_padded_vector(gold, word_map, oovs[did[i]])
 		tokenized_preds.append(pred)
 		tokenized_golds.append(gold)
-		if output:
+		if output and i < 300:
 			file.write('id = ' + str(did[i]) + '\n')
 			file.write('gold : ' + gold + '\n')
 			file.write('pred : ' + pred + '\n')
-				
+	if output:
+		file.close()
+			
 	return "{:.2f}".format(moses_multi_bleu(tokenized_preds, tokenized_golds, True))
 
 def tokenize(vals, dids):
@@ -151,11 +157,14 @@ def merge(ordered, gold_out=True):
 			dids.append(i)
 	return preds, golds, dids
 
-def evaluate(args, glob, preds, golds, entities, dialog_ids, oov_words, out=False):
+def evaluate(args, glob, preds, golds, entities, dialog_ids, oov_words, out=False, run_id="", epoch_str=""):
 	word_map = glob['idx_decode'] 
 	index_map = glob['decode_idx']
 
 	preds, golds = process(preds, golds)
+
+	# process converts indices to surface forms
+	# loop over to print surface forms
 
 	ordered_oovs = {}
 	for num, words in zip(dialog_ids, oov_words):
@@ -179,7 +188,7 @@ def evaluate(args, glob, preds, golds, entities, dialog_ids, oov_words, out=Fals
 	preds, golds, dids = merge(ordered_orig, True)
 
 	output = {}
-	output['bleu'] = float(BLEU(preds, golds, word_map, dids, ordered_oovs, output=out))
+	output['bleu'] = float(BLEU(preds, golds, word_map, dids, ordered_oovs, output=out, run_id=run_id, epoch_str=epoch_str))
 	acc, dial = accuracy(preds, golds, dids)
 	output['acc'] = float(acc)
 	output['dialog'] = float(dial)
@@ -189,6 +198,3 @@ def evaluate(args, glob, preds, golds, entities, dialog_ids, oov_words, out=Fals
 	else:
 		output['comp'] = output['acc'] 
 	return output
-
-
-
