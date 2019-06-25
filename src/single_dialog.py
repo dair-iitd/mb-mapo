@@ -359,13 +359,13 @@ class chatBot(object):
 				elif self.model.phase < 2: break
 				else: 				data_batch = Batch(data, indecies, args, glob, data.responses)
 
-				if args.beam:
+				if args.simple_beam:
 					parent_ids, predict_ids = self.model.predict(data_batch)
 				else:
 					preds = self.model.predict(data_batch)
 
 				# Store prediction outputs
-				if args.beam:
+				if args.simple_beam:
 					actions = calculate_beam_result(parent_ids, predict_ids, glob['candidate_sentence_size'])
 					for action in actions: predictions.append(action[0]) 
 				else:
