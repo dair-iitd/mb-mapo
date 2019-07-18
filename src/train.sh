@@ -17,9 +17,9 @@ for pgen_weight in 1 1.5
 do
 	for emb_size in 128
 	do
-		for lr in 0.001 0.0005 0.0002
+		for lr in 0.005 0.001 0.0005 0.0002
 		do
-			jbsub -queue x86_24h -cores 1x1+1 -proj T${task}h${hops}d${dropout}${mode} -name e${emb_size}lr${lr}p${pgen_weight} -mem $mem -out task$task/train.${mode}.lr.$lr.e.$emb_size.h.$hops.d.$dropout.pw.${pgen_weight}.out -err task$task/train.${mode}.lr.$lr.e.$emb_size.h.$hops.d.$dropout.pw.${pgen_weight}.err /u/diraghu1/anaconda3/envs/tf/bin/python single_dialog.py --train True --task_id $task --learning_rate $lr --hops $hops --embedding_size $emb_size --batch_size $batch_size --p_gen_loss True  --word_drop_prob 0.${dropout} --p_gen_loss_weight ${pgen_weight} --rl_mode ${mode}
+			jbsub -queue x86_24h -cores 1x1+1 -proj S${task}h${hops}d${dropout}${mode} -name e${emb_size}lr${lr}p${pgen_weight} -mem $mem -out task$task/train.${mode}.lr.$lr.e.$emb_size.h.$hops.d.$dropout.pw.${pgen_weight}.out -err task$task/train.${mode}.lr.$lr.e.$emb_size.h.$hops.d.$dropout.pw.${pgen_weight}.err /u/diraghu1/anaconda3/envs/tf/bin/python single_dialog.py --train True --task_id $task --learning_rate $lr --hops $hops --embedding_size $emb_size --batch_size $batch_size --p_gen_loss True  --word_drop_prob 0.${dropout} --p_gen_loss_weight ${pgen_weight} --rl_mode ${mode}
 		done
 	done
 done

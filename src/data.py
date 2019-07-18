@@ -193,6 +193,7 @@ class Data(object):
             story.append(query + ['$u', '#{}'.format(turn)])
             self._responses.append([])
             for sentence in story:
+                sentence=sentence[:glob['sentence_size']]
                 pad = max(0, glob['sentence_size'] - len(sentence))
                 story_sentences.append([glob['word_idx'][w] if w in glob['word_idx'] else UNK_INDEX for w in sentence] + [0] * pad)
                 sentence_sizes.append(len(sentence))
@@ -545,13 +546,20 @@ class Batch(Data):
 
     def _recreate_answer_embeddings(self, glob, results):
         for i, answer in enumerate(self._answers):
+            print(self._read_answers[i])
+            print(self._oov_words[i])
+            print("")
             for j, val in enumerate(answer):
                 if val == UNK_INDEX:
                     read = self._read_answers[i].split()
                     word = read[j]
                     if word in self._oov_words[i]:
                         self._answers[i][j] = len(glob['decode_idx']) + self._oov_words[i].index(word)
-
+                    else:
+                        print("WARNING: Missing the oov word -", word)
+            sys.stdout.flush()
+        sys.exit()
+        
     def _all_db_to_unk(self, stories, db_vocab_id, word_drop_prob):
         '''
             Perform Entity-Dropout on stories and story tokens

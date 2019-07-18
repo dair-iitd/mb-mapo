@@ -9,12 +9,12 @@ flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
 flags.DEFINE_integer("epochs", 200, "Number of epochs to train for.")
 
 # Model Params
-flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
+flags.DEFINE_float("learning_rate", 0.01, "Learning rate for Adam Optimizer.")
 flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matrices.")
+flags.DEFINE_integer("embedding_size", 64, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
-flags.DEFINE_integer("beam_width", 1, "Width of Beam for BeamSearchDecoder")
+flags.DEFINE_integer("beam_width", 6, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 1, "Start Phase for RL training")
 
 # Entity Word Drop
@@ -34,7 +34,7 @@ flags.DEFINE_boolean("constraint", False, "if True, perform constraint decoding"
 
 # RL Params
 flags.DEFINE_boolean("rl", True, 'if True, uses RL decoder')
-flags.DEFINE_string("rl_mode", "GREEDY", 'takes the following values: GT, GREEDY, MAPO')
+flags.DEFINE_string("rl_mode", "GT", 'takes the following values: GT, GREEDY, MAPO')
 flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action before decoding the action')
 flags.DEFINE_integer("max_api_length", 4, "Set the value based on DBEngine and QueryGenerator")
 flags.DEFINE_boolean("split_emb", True, "Use separate embedding for RL encoder")
@@ -54,9 +54,9 @@ flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
 flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
-# flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3-fabricated.txt", "kb file for this task")
+#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3-fabricated.txt", "kb file for this task")
 flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt", "kb file for this task")
-# flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
+#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
 flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
 
 def get_params():

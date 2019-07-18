@@ -208,8 +208,8 @@ class DbEngine(object):
 		if "camrest" in self.kb_file:
 			
 			# api_call dontcare east expensive
-			area = where_map["R_area"] if "R_area" in where_map.keys() else "dontcare1"
-			food  = where_map["R_food"] if "R_food" in where_map.keys() else "dontcare2"
+			food  = where_map["R_food"] if "R_food" in where_map.keys() else "dontcare1"
+			area = where_map["R_area"] if "R_area" in where_map.keys() else "dontcare2"
 			pricerange  = where_map["R_pricerange"] if "R_pricerange" in where_map.keys() else "dontcare3"
 
 			api_call = "api_call " + food + " " + area + " " + pricerange 
@@ -344,7 +344,8 @@ class QueryGenerator(object):
 
 if __name__ == "__main__":
 
-	kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-all.txt"
+	#kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-all.txt"
+	kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
 	babi_db = DbEngine(kb_file, "R_name")
 
 	query = 'api_call thai tokyo six cheap'

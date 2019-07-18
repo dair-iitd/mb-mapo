@@ -99,7 +99,10 @@ def get_reward_and_results(db_engine, query, is_valid_query, next_entities_in_di
 				# Place to modify reward function
 				recall = float(match/len(next_entities_in_dialog))
 				precision = float(match/len(result_entities_set))
-				reward = REWARD_WEIGHT*(2*recall*precision)/(recall+precision)
+				if recall + precision == 0:
+					reward = 0
+				else:
+					reward = REWARD_WEIGHT*(2*recall*precision)/(recall+precision)
 	else:
 		select_fields = []
 		db_results = []
@@ -126,8 +129,11 @@ def get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total
 	action = []
 	action_emb = []
 	
-	no_of_dontcares = 0
-	for word in words:
+	new_query = ""
+	for idx, word in enumerate(words):
+		if word == "dontcare":
+			word = word + str(idx)
+		new_query += " " + word
 		if word not in rl_idx:
 			if word in rl_oov_word_list:
 				index = rl_oov_word_list.index(word)
@@ -136,11 +142,10 @@ def get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total
 				action.append(rl_idx['UNK'])
 			action_emb.append(rl_idx['UNK'])
 		else:
-			if word == "dontcare":
-				no_of_dontcares += 1
 			action.append(rl_idx[word])
 			action_emb.append(rl_idx[word])
 
+	#print(new_query.strip())
 	#action.append(rl_idx['EOS'])
 	#action_emb.append(rl_idx['EOS'])
 
@@ -211,8 +216,16 @@ def get_gt_action_with_results(api_call, rl_idx, max_api_length, rl_oov_word_lis
 
 def is_perfect_match(db_engine, api_call, sql_query):
 	# the logical form and api_call are the same
-	sql_query_formatted = sql_query
-	if api_call == sql_query_formatted:
+	words = api_call.split(' ')
+	comparable_api_call = ""
+	for idx, word in enumerate(words):
+		if word == "dontcare":
+			word = word + str(idx)
+		comparable_api_call += " " + word
+	comparable_api_call = comparable_api_call.strip()
+	
+	#print(comparable_api_call, sql_query, comparable_api_call == sql_query)
+	if comparable_api_call == sql_query:
 		return 1
 	else:
 		return 0
@@ -252,7 +265,6 @@ def process_action_beam(action_beam, action_length, args, glob, rl_oov_words, ba
 	action_surface_form = ""
 	action_size = 0
 
-	no_of_dontcares = 0
 	for word_id in high_probable_action:
 		action_size+=1
 		if word_id not in glob['idx_rl']:
@@ -270,8 +282,6 @@ def process_action_beam(action_beam, action_length, args, glob, rl_oov_words, ba
 				break
 		else:
 			word_form = glob['idx_rl'][word_id]
-			if word_form == 'dontcare':
-				no_of_dontcares+=1
 			action_emb_lookup.append(word_id)
 			if args.fixed_length_decode:
 				if action_size == high_probable_action_length:
@@ -437,6 +447,10 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				# push all the high recall queries into batched_actions_and_rewards
 
 				for i in range(no_of_high_recall_actions):
+					
+					if i >= (total_width/2):
+						break
+
 					action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(i)
 					total_high_recall_actions_rewards+= reward[0]
 					
@@ -445,6 +459,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					batched_actions_and_rewards[i].add_entry(
 						copy.deepcopy(action), copy.deepcopy(action_emb_lookup), copy.deepcopy(action_size), copy.deepcopy(reward))
 					queries_added+=1
+
 			elif mode == "GREEDY":
 				action, action_emb_lookup, action_size, reward = get_best_action_with_reward(high_recall_queries, glob['rl_idx'], max_api_length, rl_oov_words[batch_index], total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
 				batched_actions_and_rewards[0].add_entry(
@@ -495,7 +510,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				print("GT:", rlData[dialog_id][turn_id]['api_call'])
 				print("PREDICT:",action_surface_form, reward)
 				print("---------------------------------")
-			'''
+			'''	
 		else:
 			# MAPO
 

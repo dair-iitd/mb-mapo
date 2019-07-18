@@ -116,7 +116,6 @@ def BLEU(preds, golds, word_map, did, oovs, output=False, run_id="", epoch_str="
 		tokenized_preds.append(pred)
 		tokenized_golds.append(gold)
 		if output and i < 300:
-			file.write('id = ' + str(did[i]) + '\n')
 			file.write('gold : ' + gold + '\n')
 			file.write('pred : ' + pred + '\n')
 	if output:

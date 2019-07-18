@@ -152,6 +152,8 @@ class chatBot(object):
 				#print('Total Cost Pre: {}'.format(total_cost_pre)); sys.stdout.flush()
 			#	total_loss = total_cost_pre
 			
+			test_oov_accuracies = self.batch_predict(Data_test_OOV, batches_oov, self.RLtestOOVData, output=True, epoch_str=str(epoch)+'-OOV')
+				
 			if args.rl and self.model.phase >= 1:
 				Data_train.reset_responses()
 				total_reward, perfect_query_ratio, valid_query_ratio = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData)

@@ -922,6 +922,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
 
     # cell_output, next_cell_state = cellStep(inputs, position_emb, state)
 
+    '''
     if self._rl:
       # with tf.variable_scope(self._name):
       inputs, position_emb = inputs
@@ -929,14 +930,20 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
     else:
       inputs, null = inputs
       cell_inputs = self._cell_input_fn(inputs, state.attention)
+    '''
+
+    inputs, null = inputs
+    cell_inputs = self._cell_input_fn(inputs, state.attention)
 
     # cell_inputs = inputs
     cell_state = state.cell_state
     cell_output, next_cell_state = self._cell(cell_inputs, cell_state)
 
+    '''
     if self._rl:
       next_cell_state = cell_state
-
+    '''
+    
     cell_batch_size = (
         cell_output.shape[0].value or array_ops.shape(cell_output)[0])
     error_message = (
