@@ -47,7 +47,7 @@ flags.DEFINE_boolean("debug", False, 'if True, enables debug mode (Verbose Error
 
 # Task Type
 flags.DEFINE_integer("task_id", 3, "bAbI task id, 1 <= id <= 8")
-flags.DEFINE_boolean('train', True, 'if True, begin to train')
+flags.DEFINE_boolean('train', False, 'if True, begin to train')
 flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 
 # File Locations

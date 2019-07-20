@@ -204,9 +204,14 @@ def load_RL_data(data_dir, task_id):
         json_object = json.load(open(datafile))
         parsed = dict()
         for obj in json_object:
+            api_call_turns = []
             parsed[obj["dialog_id"]] = dict()
             for turn in obj["turns"]:
                 parsed[obj["dialog_id"]][turn["turn_id"]] = turn
+                if turn['make_api_call'] == True:
+                    api_call_turns.append(turn["turn_id"])
+            parsed[obj["dialog_id"]]["api_call_turns"] = api_call_turns
+
         return parsed
 
     assert task_id > 0 and task_id < 9
@@ -332,6 +337,7 @@ def create_batches(data, batch_size, RLdata=None):
         for dialog in RLdata.keys():
             api_map[dialog] = -1
             for turn in RLdata[dialog].keys():
+                if turn == "api_call_turns": continue
                 if RLdata[dialog][turn]['make_api_call']: api_map[dialog] = turn
     for i, (d, t) in enumerate(zip(data.dialog_ids, data.turn_ids)):
         if d not in api_map:    pre_set.add(i)

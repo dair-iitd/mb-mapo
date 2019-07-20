@@ -2,8 +2,6 @@ import numpy as np
 import random
 import sys
 from itertools import chain
-from operator import itemgetter
-
 
 ## Special Indecies
 PAD_INDEX = 0
@@ -13,10 +11,11 @@ EOS_INDEX = 3
 
 class Data(object):
 
-    def __init__(self, data, args, glob):
+    def __init__(self, data, args, glob, rldata):
         self._db_vocab_id = glob['word_idx'].get('$db', -1)
         self._decode_vocab_size = len(glob['decode_idx'])
         self._rl = args.rl
+        self._rldata = rldata
 
         ## Sort Dialogs based on turn_id
         self._extract_data_items(data, args.rl)
@@ -51,6 +50,10 @@ class Data(object):
     @property
     def answers(self):
         return self._answers
+
+    @property
+    def rldata(self):
+        return self._rldata
 
     ## Sizes ##
     @property
@@ -288,9 +291,9 @@ class Data(object):
                 if w in glob['decode_idx']:
                     answer_sentence.append(glob['decode_idx'][w])
                     a_emb_lookup.append(glob['decode_idx'][w])
-                elif w in self._oov_words[i]:
-                    answer_sentence.append(self._decode_vocab_size + self._oov_words[i].index(w))
-                    a_emb_lookup.append(UNK_INDEX)
+                #elif w in self._oov_words[i]:
+                #    answer_sentence.append(self._decode_vocab_size + self._oov_words[i].index(w))
+                #    a_emb_lookup.append(UNK_INDEX)
                 else:
                     answer_sentence.append(UNK_INDEX)
                     a_emb_lookup.append(UNK_INDEX)
@@ -361,6 +364,7 @@ class Batch(Data):
             self._stories = self._repeat_copy(batchToCopy.stories, indexToCopy, noOfCopies)
             self._queries = self._repeat_copy(batchToCopy.queries, indexToCopy, noOfCopies)
             self._answers = self._repeat_copy(batchToCopy.answers, indexToCopy, noOfCopies)
+            self._rldata = data.rldata
 
             ## Sizes ##
             self._story_lengths = self._repeat_copy(batchToCopy.story_lengths, indexToCopy, noOfCopies)
@@ -402,39 +406,40 @@ class Batch(Data):
         else:
             
             ## Dialogs ##
-            self._stories = list(itemgetter(*indecies)(data.stories))
-            self._queries = list(itemgetter(*indecies)(data.queries))
-            self._answers = list(itemgetter(*indecies)(data.answers))
+            self._stories = [data.stories[idx] for idx in indecies]
+            self._queries = [data.queries[idx] for idx in indecies]
+            self._answers = [data.answers[idx] for idx in indecies]
+            self._rldata = data.rldata
 
             ## Sizes ##
-            self._story_lengths = list(itemgetter(*indecies)(data.story_lengths))
-            self._story_sizes   = list(itemgetter(*indecies)(data.story_sizes))
-            self._query_sizes   = list(itemgetter(*indecies)(data.query_sizes))
-            self._answer_sizes  = list(itemgetter(*indecies)(data.answer_sizes))
+            self._story_lengths = [data.story_lengths[idx] for idx in indecies]
+            self._story_sizes   = [data.story_sizes[idx] for idx in indecies]
+            self._query_sizes   = [data.query_sizes[idx] for idx in indecies]
+            self._answer_sizes  = [data.answer_sizes[idx] for idx in indecies]
 
             ## Read Dialogs ##
-            self._read_stories = list(itemgetter(*indecies)(data.readable_stories))
-            self._read_queries = list(itemgetter(*indecies)(data.readable_queries))
-            self._read_answers = list(itemgetter(*indecies)(data.readable_answers))
+            self._read_stories = [data.readable_stories[idx] for idx in indecies]
+            self._read_queries = [data.readable_queries[idx] for idx in indecies]
+            self._read_answers = [data.readable_answers[idx] for idx in indecies]
 
             ## OOV ##
-            self._oov_ids   = list(itemgetter(*indecies)(data.oov_ids))
-            self._oov_sizes = list(itemgetter(*indecies)(data.oov_sizes))
-            self._oov_words = list(itemgetter(*indecies)(data.oov_words))
+            self._oov_ids   = [data.oov_ids[idx] for idx in indecies]
+            self._oov_sizes = [data.oov_sizes[idx] for idx in indecies]
+            self._oov_words = [data.oov_words[idx] for idx in indecies]
 
             ## RL OOV ##
             if args.rl: 
-                self._rl_oov_ids   = list(itemgetter(*indecies)(data.rl_oov_ids))
-                self._rl_oov_sizes = list(itemgetter(*indecies)(data.rl_oov_sizes))
-                self._rl_oov_words = list(itemgetter(*indecies)(data.rl_oov_words))
+                self._rl_oov_ids   = [data.rl_oov_ids[idx] for idx in indecies]
+                self._rl_oov_sizes = [data.rl_oov_sizes[idx] for idx in indecies]
+                self._rl_oov_words = [data.rl_oov_words[idx] for idx in indecies]
 
             ## Dialog Info ##
-            self._dialog_ids  = list(itemgetter(*indecies)(data.dialog_ids))
-            self._turn_ids    = list(itemgetter(*indecies)(data.turn_ids))
+            self._dialog_ids  = [data.dialog_ids[idx] for idx in indecies]
+            self._turn_ids    = [data.turn_ids[idx] for idx in indecies]
             self._db_vocab_id = data.db_vocab_id
 
             ## Decode Variables ##
-            self._answers_emb_lookup = list(itemgetter(*indecies)(data.answers_emb_lookup))
+            self._answers_emb_lookup = [data.answers_emb_lookup[idx] for idx in indecies]
 
             if results:
                 # self._append_results(args, glob, list(itemgetter(*indecies)(results)))
@@ -450,9 +455,9 @@ class Batch(Data):
             if args.rl:
                 self.get_entity_indecies(self._read_answers, self._entity_set)
             else:
-                self._entities = list(itemgetter(*indecies)(data.entities))
+                self._entities = [data.entities[idx] for idx in indecies]
 
-            self._intersection_set = list(itemgetter(*indecies)(data.intersection_set))
+            self._intersection_set = [data.intersection_set[idx] for idx in indecies]
 
             if args.word_drop and train:
                 self._stories = self._all_db_to_unk(self._stories, data.db_vocab_id, args.word_drop_prob)
@@ -482,7 +487,20 @@ class Batch(Data):
             sentence_sizes = []     
             story_string = []       
             oov_ids = []            
-            oov_words = self._oov_words[i]
+            
+            api_call_turns = self._rldata[self._dialog_ids[i]]["api_call_turns"]
+            api_call_turn_id = -1
+            if len(api_call_turns) > 0:
+                api_call_turn_id = api_call_turns[0]
+            position_to_insert = -1
+            if "#"+str(api_call_turn_id) in self._oov_words[i]:
+                position_to_insert = self._oov_words[i].index("#"+str(api_call_turn_id))
+                prefix_oov_words = self._oov_words[i][:position_to_insert+1]
+                suffix_oov_words = self._oov_words[i][position_to_insert+1:]
+            else:
+                prefix_oov_words = self._oov_words[i]
+                suffix_oov_words = []
+
             if args.rl: 
                 rl_oov_ids = []         
                 rl_oov_words = self._rl_oov_words[i]
@@ -495,14 +513,15 @@ class Batch(Data):
                 story_string.append([str(x) for x in sentence] + [''] * pad)
 
                 oov_sentence_ids = []
-                rl_oov_sentence_ids = [] 
+                rl_oov_sentence_ids = []
+
                 for w in sentence:
                     if w not in glob['decode_idx']:
-                        if w not in oov_words:
-                            oov_sentence_ids.append(len(glob['decode_idx']) + len(oov_words))
-                            oov_words.append(w)
+                        if w not in prefix_oov_words:
+                            oov_sentence_ids.append(len(glob['decode_idx']) + len(prefix_oov_words))
+                            prefix_oov_words.append(w)
                         else:
-                            oov_sentence_ids.append(len(glob['decode_idx']) + oov_words.index(w))
+                            oov_sentence_ids.append(len(glob['decode_idx']) + prefix_oov_words.index(w))
                     else:
                         oov_sentence_ids.append(glob['decode_idx'][w])
                     
@@ -515,11 +534,16 @@ class Batch(Data):
                                 rl_oov_sentence_ids.append(len(glob['rl_idx']) + rl_oov_words.index(w)) 
                         else:
                             rl_oov_sentence_ids.append(glob['rl_idx'][w])
+
                 oov_sentence_ids = oov_sentence_ids + [PAD_INDEX] * pad
                 oov_ids.append(oov_sentence_ids)
                 if args.rl: 
                     rl_oov_sentence_ids = rl_oov_sentence_ids + [PAD_INDEX] * pad
                     rl_oov_ids.append(rl_oov_sentence_ids)
+            for word in suffix_oov_words:
+                if word not in prefix_oov_words:
+                    prefix_oov_words.append(word)
+
             original_mem_size = memory_size-len(response)
             maxl = max(self._story_lengths)
 
@@ -530,25 +554,32 @@ class Batch(Data):
                 self._oov_ids[i] = self._oov_ids[i][:original_mem_size]
                 if args.rl: self._rl_oov_ids[i] = self._rl_oov_ids[i][:original_mem_size]
             else:
+                '''
+                for line in story:
+                    surface_line = ""
+                    for w in line:
+                        surface_line = surface_line + " " + glob['idx_word'][w]
+                    print(surface_line.strip())
+                sys.stdout.flush()
+                '''
                 self._stories[i] = np.concatenate((story[:original_mem_size], np.array(story_sentences)))
                 self._story_sizes[i] = np.concatenate((self._story_sizes[i][:original_mem_size], np.array(sentence_sizes)))
                 self._read_stories[i] = np.concatenate((self._read_stories[i][:original_mem_size], np.array(story_string)))
-                self._oov_words[i] = oov_words
+                self._oov_words[i] = prefix_oov_words
                 self._oov_ids[i] = np.concatenate((self._oov_ids[i][:original_mem_size], np.array(oov_ids)))
-                self._oov_sizes[i] = np.array(len(oov_words))
+                self._oov_sizes[i] = np.array(len(prefix_oov_words))
                 if args.rl: 
                     self._rl_oov_ids[i] = np.concatenate((self._rl_oov_ids[i][:original_mem_size], np.array(rl_oov_ids)))
                     self._rl_oov_sizes[i] = np.array(len(rl_oov_words))
                     self._rl_oov_words[i] = rl_oov_words
-
         if results:
             self._recreate_answer_embeddings(glob, selected)
 
     def _recreate_answer_embeddings(self, glob, results):
         for i, answer in enumerate(self._answers):
-            print(self._read_answers[i])
-            print(self._oov_words[i])
-            print("")
+            #print(self._read_answers[i])
+            #print(self._oov_words[i])
+            #print("")
             for j, val in enumerate(answer):
                 if val == UNK_INDEX:
                     read = self._read_answers[i].split()
@@ -558,7 +589,6 @@ class Batch(Data):
                     else:
                         print("WARNING: Missing the oov word -", word)
             sys.stdout.flush()
-        sys.exit()
         
     def _all_db_to_unk(self, stories, db_vocab_id, word_drop_prob):
         '''

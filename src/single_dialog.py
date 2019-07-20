@@ -71,7 +71,7 @@ class chatBot(object):
 
 		# Define MemN2N + Generator Model
 		glob['optimizer'] = tf.train.AdamOptimizer(learning_rate=args.learning_rate, epsilon=args.epsilon)
-		glob['session'] = tf.Session()
+		glob['session'] = tf.Session(config=tf.ConfigProto(log_device_placement=False,allow_soft_placement=True))
 		self.model = MemN2NGeneratorDialog(args, glob)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
@@ -101,20 +101,20 @@ class chatBot(object):
 			Train the model
 		'''
 		print("------------------------")
-		Data_train = Data(self.trainData, args, glob)
+		Data_train = Data(self.trainData, args, glob, self.RLtrainData)
 		n_train = len(Data_train.stories)
 		print("Training Size", n_train)
 
-		Data_val = Data(self.valData, args, glob)
+		Data_val = Data(self.valData, args, glob, self.RLvalData)
 		n_val = len(Data_val.stories)
 		print("Validation Size", n_val)
 
-		Data_test = Data(self.testData, args, glob)
+		Data_test = Data(self.testData, args, glob, self.RLtestData)
 		n_test = len(Data_test.stories)
 		print("Test Size", n_test)
 
 		if args.task_id < 6:
-			Data_test_OOV = Data(self.testOOVData, args, glob)
+			Data_test_OOV = Data(self.testOOVData, args, glob, self.RLtestOOVData)
 			n_oov = len(Data_test_OOV.stories)
 			print("Test OOV Size", n_oov)
 		sys.stdout.flush()
@@ -152,8 +152,6 @@ class chatBot(object):
 				#print('Total Cost Pre: {}'.format(total_cost_pre)); sys.stdout.flush()
 			#	total_loss = total_cost_pre
 			
-			test_oov_accuracies = self.batch_predict(Data_test_OOV, batches_oov, self.RLtestOOVData, output=True, epoch_str=str(epoch)+'-OOV')
-				
 			if args.rl and self.model.phase >= 1:
 				Data_train.reset_responses()
 				total_reward, perfect_query_ratio, valid_query_ratio = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData)
@@ -270,11 +268,11 @@ class chatBot(object):
 			print("...no checkpoint found...")
 
 		if args.OOV:
-			Data_test = Data(self.testOOVData, args, glob)
+			Data_test = Data(self.testOOVData, args, glob,  self.RLtestOOVData)
 			n_test = len(Data_test_OOV.stories)
 			print("Test OOV Size", n_test)
 		else:
-			Data_test = Data(self.testData, args, glob)
+			Data_test = Data(self.testData, args, glob,  self.RLtestData)
 			n_test = len(Data_test.stories)
 			print("Test Size", n_test)
 		sys.stdout.flush()
@@ -313,7 +311,9 @@ class chatBot(object):
 		#for i, indecies in pbar:
 		for i, indecies in enumerate(batches):
 			idx = indecies[0]
-			indecies = indecies[1:]
+			indecies = indecies[1:]	
+			if len(indecies) == 0:
+				continue
 			if idx == 2:
 				batch_entry = Batch(data, indecies, args, glob, responses, train=True)
 			else:
@@ -338,7 +338,7 @@ class chatBot(object):
 
 		if args.rl and self.model.phase >= 1:
 			total_reward, perfect_query_ratio, valid_query_ratio = self.batch_train_api(data, batches_api, rl_data, train=False, output=output, epoch_str=epoch_str)
-		
+			
 		if args.rl and self.model.phase >= 2:
 			predictions = []
 
@@ -356,11 +356,13 @@ class chatBot(object):
 			for i, indecies in enumerate(batches):
 				idx = indecies[0]
 				indecies = indecies[1:]
+				if len(indecies) == 0:
+					continue
 				# Get predictions
 				if i < post_index: 	data_batch = Batch(data, indecies, args, glob, None)
 				elif self.model.phase < 2: break
 				else: 				data_batch = Batch(data, indecies, args, glob, data.responses)
-
+				
 				if args.simple_beam:
 					parent_ids, predict_ids = self.model.predict(data_batch)
 				else:
