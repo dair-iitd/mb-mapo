@@ -344,7 +344,7 @@ class QueryGenerator(object):
 
 if __name__ == "__main__":
 
-	#kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-all.txt"
+	#kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt"
 	kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
 	babi_db = DbEngine(kb_file, "R_name")
 

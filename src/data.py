@@ -110,7 +110,7 @@ class Data(object):
     @property
     def rl_oov_words(self):
         return self._rl_oov_words
-
+    
     ## Dialog Info ##
     @property
     def dialog_ids(self):
@@ -141,6 +141,10 @@ class Data(object):
     @property
     def entity_ids(self):
         return self._entity_ids
+    
+    @property
+    def encoder_entity_ids(self):
+        return self._encoder_entity_ids
 
     @property
     def entities(self):
@@ -309,32 +313,16 @@ class Data(object):
             Create a set of all entity words seen
         '''
         self._entity_set = set()                  # Maintain a set of entities seen
-        for story in stories:
-            for sentence in story:
-                if '$db' in sentence:
-                    for w in sentence[:-2]:
-                        if w not in self._entity_set:
-                            self._entity_set.add(w)
-                                
-        for answer in answers:
-            if 'api_call' in answer:
-                for w in answer[1:]:
-                    if w not in self._entity_set:
-                        self._entity_set.add(w)
+        
         for db in database:
             for entry in db:
                 for w in entry:
-                    if w not in self._entity_set:
+                    if w not in self._entity_set and not w.startswith('r_'):
                         self._entity_set.add(w)
-
-        ## Remove Punctuation
-        punc = ['.', ',', '?', '!', '-', '_', '\"', '\'']
-        for word in punc:
-            if word in self._entity_set:
-                self._entity_set.remove(word)
-
+        
         self._entity_ids = set([glob['decode_idx'][x] for x in self._entity_set if x in glob['decode_idx']])
-
+        self._encoder_entity_ids = set([glob['word_idx'][x] for x in self._entity_set if x in glob['word_idx']])
+        
     def _intersection_set_mask(self, answers, entity_ids, glob):
         '''
             Create a mask which tracks the postions to copy a DB word
@@ -400,6 +388,7 @@ class Batch(Data):
             self._db = batchToCopy.db
             self._entity_set = batchToCopy.entity_set
             self._entity_ids = batchToCopy.entity_ids
+            self._encoder_entity_ids = batchToCopy.encoder_entity_ids
             self._entities = self._repeat_copy(batchToCopy.entities, indexToCopy, noOfCopies)
             self._intersection_set = self._repeat_copy(batchToCopy.intersection_set, indexToCopy, noOfCopies)
             
@@ -451,6 +440,7 @@ class Batch(Data):
             self._db = data.db
             self._entity_set = data.entity_set
             self._entity_ids = data.entity_ids
+            self._encoder_entity_ids = data.encoder_entity_ids
 
             if args.rl:
                 self.get_entity_indecies(self._read_answers, self._entity_set)
@@ -577,9 +567,6 @@ class Batch(Data):
 
     def _recreate_answer_embeddings(self, glob, results):
         for i, answer in enumerate(self._answers):
-            #print(self._read_answers[i])
-            #print(self._oov_words[i])
-            #print("")
             for j, val in enumerate(answer):
                 if val == UNK_INDEX:
                     read = self._read_answers[i].split()
@@ -601,7 +588,7 @@ class Batch(Data):
             for i in range(new_story.shape[0]):
                 if db_vocab_id not in new_story[i]:
                     for j in range(new_story.shape[1]):
-                        if new_story[i][j] in self._entity_ids:
+                        if new_story[i][j] in self._encoder_entity_ids:
                             sample = random.uniform(0,1)
                             if sample < word_drop_prob:
                                 new_story[i][j] = UNK_INDEX

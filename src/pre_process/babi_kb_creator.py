@@ -1,8 +1,8 @@
 def create_task3_kb():
 	input_folder = "../../data/dialog-bAbI-tasks/"
-	output_file_path  = input_folder + "dialog-babi-kb-task3.txt"
+	output_file_path  = input_folder + "dialog-babi-kb-task3-new.txt"
 
-	input_file_prefix = 'dialog-babi-task3-options-'
+	input_file_prefix = 'dialog-babi-task3-options-with-api-'
 	input_file_paths = ['trn.txt', 'dev.txt', 'tst.txt', 'tst-OOV.txt']
 
 	data = []
@@ -100,4 +100,4 @@ def create_artificial_task3_kb():
 						output_file.write(db_entry)
 	output_file.close()
 
-create_artificial_task3_kb()
+create_task3_kb()

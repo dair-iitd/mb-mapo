@@ -104,7 +104,7 @@ def get_tokenized_response_from_padded_vector(vector, word_map, oov):
 def BLEU(preds, golds, word_map, did, oovs, output=False, run_id="", epoch_str=""):
 	tokenized_preds = []
 	tokenized_golds = []
-
+	
 	if output:
 		dirName = 'logs/preds/'+run_id
 		if not os.path.exists(dirName):
@@ -115,9 +115,9 @@ def BLEU(preds, golds, word_map, did, oovs, output=False, run_id="", epoch_str="
 		gold = get_tokenized_response_from_padded_vector(gold, word_map, oovs[did[i]])
 		tokenized_preds.append(pred)
 		tokenized_golds.append(gold)
-		if output and i < 300:
+		if output:
 			file.write('gold : ' + gold + '\n')
-			file.write('pred : ' + pred + '\n')
+			file.write('pred : ' + pred + '\n\n')
 	if output:
 		file.close()
 			

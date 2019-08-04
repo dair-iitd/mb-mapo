@@ -79,7 +79,7 @@ class chatBot(object):
 		'''
 			Get vocabulary from the Train data
 		'''
-		vocab = reduce(lambda x, y: x | y, (set(list(chain.from_iterable(s)) + q) for s, q, a, _, _, _ in data))
+		vocab = reduce(lambda x, y: x | y, (set(list(chain.from_iterable(s)) + q + list(chain.from_iterable(d))) for s, q, a, _, _, d in data))
 		vocab = sorted(vocab)
 		glob['word_idx'] = dict((c, i + 2) for i, c in enumerate(vocab))
 		glob['word_idx']['']=0
@@ -195,11 +195,6 @@ class chatBot(object):
 
 				print('')
 				sys.stdout.flush()
-				
-				if (self.model.phase == 1 and glob['valid_query']):
-					self.model.phase += 1
-					print("PHASE change to {}".format(self.model.phase))
-					print('')
 					
 				'''
 				if self.model.phase == 1:
@@ -255,11 +250,17 @@ class chatBot(object):
 						print('{0:30} : {1:6f}'.format("Test OOV API Match", test_oov_accuracies['api']))
 					print('')
 					sys.stdout.flush()
+
+				if (self.model.phase == 1 and glob['valid_query']):
+					self.model.phase += 1
+					print("PHASE change to {}".format(self.model.phase))
+					print('')
 			
 	def test(self):
 		'''
 			Test the model
 		'''
+		self.model.phase = 2
 		# Look for previously saved checkpoint
 		ckpt = tf.train.get_checkpoint_state(self.model_dir)
 		if ckpt and ckpt.model_checkpoint_path:
@@ -271,28 +272,30 @@ class chatBot(object):
 			Data_test = Data(self.testOOVData, args, glob,  self.RLtestOOVData)
 			n_test = len(Data_test_OOV.stories)
 			print("Test OOV Size", n_test)
+			prefix = "Test OOV"
 		else:
 			Data_test = Data(self.testData, args, glob,  self.RLtestData)
 			n_test = len(Data_test.stories)
 			print("Test Size", n_test)
+			prefix = "Test"
 		sys.stdout.flush()
 
 		print('*Predict Test*'); sys.stdout.flush()
 		if args.OOV:
 			batches_test = create_batches(Data_test, args.batch_size, self.RLtestOOVData)
-			test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestOOVData, output=True, epoch_str="test")
+			test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestOOVData, output=True, epoch_str="test-OOV")
 		else:
 			batches_test = create_batches(Data_test, args.batch_size, self.RLtestData)
-			test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True, epoch_str="test-OOV")
+			test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True, epoch_str="test")
 
 		print('-----------------------')
 		print('SUMMARY')
 		if args.bleu_score:
-			print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))
-		print('{0:30} : {1:6f}'.format("Test Accuracy", test_accuracies['acc']))
-		print('{0:30} : {1:6f}'.format("Test Dialog", test_accuracies['dialog']))
-		print('{0:30} : {1:6f}'.format("Test F1", test_accuracies['f1']))
-		print('{0:30} : {1:6f}'.format("Test API Match", test_accuracies['api']))
+			print('{0} {1} : {2:6f}'.format(prefix, "BLEU", test_accuracies['bleu']))
+		print('{0} {1} : {2:6f}'.format(prefix, "Accuracy", test_accuracies['acc']))
+		print('{0} {1} : {2:6f}'.format(prefix, "Dialog", test_accuracies['dialog']))
+		print('{0} {1} : {2:6f}'.format(prefix, "F1", test_accuracies['f1']))
+		print('{0} {1} : {2:6f}'.format(prefix, "API Match", test_accuracies['api']))
 		print("------------------------")
 		sys.stdout.flush()
 
@@ -443,7 +446,7 @@ class chatBot(object):
 		for i, indecies in enumerate(batches):
 			idx = indecies[0]
 			indecies = indecies[1:]
-			batch_entry = Batch(data, indecies, args, glob)
+			batch_entry = Batch(data, indecies, args, glob,train=True)
 
 			# dont run api_predict if we have to just append Ground Truth
 			if args.rl_mode == "GT":

@@ -9,10 +9,10 @@ flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
 flags.DEFINE_integer("epochs", 200, "Number of epochs to train for.")
 
 # Model Params
-flags.DEFINE_float("learning_rate", 0.01, "Learning rate for Adam Optimizer.")
+flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
 flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-flags.DEFINE_integer("embedding_size", 64, "Embedding size for embedding matrices.")
+flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
 flags.DEFINE_integer("beam_width", 6, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 1, "Start Phase for RL training")
@@ -22,7 +22,7 @@ flags.DEFINE_float("word_drop_prob", 0.2, "value to set, if word_drop is set to 
 flags.DEFINE_boolean('word_drop', True, 'if True, drop db words in story')
 
 # PGen Loss
-flags.DEFINE_float("p_gen_loss_weight", 1.5, 'relative weight to p_gen loss, > 1 gives more weight to p_gen loss')
+flags.DEFINE_float("p_gen_loss_weight", 1.0, 'relative weight to p_gen loss, > 1 gives more weight to p_gen loss')
 flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss during training')
 
 # Model Type
