@@ -351,7 +351,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 	
 	if mode == "HYBRID":
 		total_width = 1
-	if mode == "MAPO":
+	elif mode == "MAPO":
 		total_width = beam_width
 	else: # for GT and GREEDY
 		total_width = 1
@@ -539,7 +539,11 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 			#MAPO or HYBRID
 			# number of samples outside the buffer
 			K = total_width - queries_added
-			one_minus_mapo_pi_b_by_K = (1-mapo_pi_b)/K
+			if K == 0:
+				one_minus_mapo_pi_b_by_K = 1
+			else:
+				one_minus_mapo_pi_b_by_K = (1-mapo_pi_b)/K
+			
 
 			## this snippet prints the predicted beams
 			'''
@@ -621,6 +625,9 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 						out_file.write('pred : ' + action_surface_form + '\n')
 
 					if mode == 'HYBRID':
+						if queries_added == 0:
+							batched_actions_and_rewards[queries_added].add_entry(
+								np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([max(float(reward), 1.0)]))
 						break
 						
 				if action_surface_form in filtered_queries:
