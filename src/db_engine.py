@@ -12,6 +12,8 @@ class DbEngine(object):
 	valid_conditions = set([])
 	invalid_conditions = set([])
 
+	valid_queries = {}
+
 	def __init__(self, kb_file, key_field_name):
 		
 		self.kb_file = kb_file
@@ -109,14 +111,18 @@ class DbEngine(object):
 		if not query.startswith("api_call "):
 			return False
 		
+		if query in DbEngine.valid_queries:
+			return DbEngine.valid_queries[query]
+
 		words = query.strip().split()
 		
-		if self._data_set == "babi" and len(words) == 5:
-			return True
+		if (self._data_set == "babi" and len(words) == 5) or (self._data_set == "camrest" and len(words) == 4):
+			_, results, _ = self.execute(query)
+			if len(results) > 0:
+				DbEngine.valid_queries[query] = True
+				return True
 		
-		if self._data_set == "camrest" and len(words) == 4:
-			return True
-		
+		DbEngine.valid_queries[query] = False
 		return False
 		
 	def execute(self, query):
@@ -237,28 +243,17 @@ class DbEngine(object):
 			
 		if "camrest" in self.kb_file:
 			
-			'''
-			if api_call_arr[1] != "dontcare": where_clauses.append('R_food ' + api_call_arr[1])
-			if api_call_arr[2] != "dontcare": where_clauses.append('R_area ' + api_call_arr[2])
-			if api_call_arr[3] != "dontcare": where_clauses.append('R_pricerange ' + api_call_arr[3])
-			'''
-			if not api_call_arr[1].startswith("dontcare"): where_clauses.append('R_food ' + api_call_arr[1])
-			if not api_call_arr[2].startswith("dontcare"): where_clauses.append('R_area ' + api_call_arr[2])
-			if not api_call_arr[3].startswith("dontcare"): where_clauses.append('R_pricerange ' + api_call_arr[3])
-
+			if api_call_arr[1] != "dontcare1": where_clauses.append('R_food ' + api_call_arr[1])
+			if api_call_arr[2] != "dontcare2": where_clauses.append('R_area ' + api_call_arr[2])
+			if api_call_arr[3] != "dontcare3": where_clauses.append('R_pricerange ' + api_call_arr[3])
+			
 		elif "babi" in self.kb_file:
 			
-			'''
-			if api_call_arr[1] != "dontcare": where_clauses.append('R_cuisine ' + api_call_arr[1])
-			if api_call_arr[2] != "dontcare": where_clauses.append('R_location ' + api_call_arr[2])
-			if api_call_arr[3] != "dontcare": where_clauses.append('R_number ' + api_call_arr[3])
-			if api_call_arr[4] != "dontcare": where_clauses.append('R_price ' + api_call_arr[4])
-			'''
-			if not api_call_arr[1].startswith("dontcare"): where_clauses.append('R_cuisine ' + api_call_arr[1])
-			if not api_call_arr[2].startswith("dontcare"): where_clauses.append('R_location ' + api_call_arr[2])
-			if not api_call_arr[3].startswith("dontcare"): where_clauses.append('R_number ' + api_call_arr[3])
-			if not api_call_arr[4].startswith("dontcare"): where_clauses.append('R_price ' + api_call_arr[4])
-
+			if api_call_arr[1] != "dontcare1": where_clauses.append('R_cuisine ' + api_call_arr[1])
+			if api_call_arr[2] != "dontcare2": where_clauses.append('R_location ' + api_call_arr[2])
+			if api_call_arr[3] != "dontcare3": where_clauses.append('R_number ' + api_call_arr[3])
+			if api_call_arr[4] != "dontcare4": where_clauses.append('R_price ' + api_call_arr[4])
+			
 		else:
 			
 			print("ERROR: Unknown KB File in DbEngine")
@@ -330,8 +325,12 @@ class QueryGenerator(object):
 		output_entities_set = set(output_entities)
 		
 		where_clauses = self._get_conditions(input_entities)
+		alreadyChecked = set([])
 		for where_clause in where_clauses:
 			query = self._dbObject.get_api_call_from_where_clauses(where_clause)
+			if query in alreadyChecked:
+				continue
+			alreadyChecked.add(query)
 			if query in QueryGenerator.Cache:
 				result_set = QueryGenerator.Cache[query]
 			else:
@@ -344,8 +343,8 @@ class QueryGenerator(object):
 
 if __name__ == "__main__":
 
-	#kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt"
-	kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
+	kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt"
+	#kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
 	babi_db = DbEngine(kb_file, "R_name")
 
 	query = 'api_call thai tokyo six cheap'
@@ -359,10 +358,10 @@ if __name__ == "__main__":
 		for result in results:
 			print(result)
 		print("\n-----------------------\n")
-	
+
 	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
-	input_entities=["thai", "tokyo", "expensive"]
-	output_entities=[]
+	input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'expensive', 'centre', 'afghan', 'turkish', 'king_street_city_centre']
+	output_entities=['anatolia', 'moderate', '30_bridge_street_city_centre']
 	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities)
 
 	for high_recall_query in high_recall_queries:

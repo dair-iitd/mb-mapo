@@ -119,6 +119,10 @@ class chatBot(object):
 			print("Test OOV Size", n_oov)
 		sys.stdout.flush()
 
+		if args.rl:
+			glob['valid_query'] = False
+			glob['best_validation_rewards'] = 0.0
+
 		# Create Batches
 		batches_train = create_batches(Data_train, args.batch_size, self.RLtrainData)
 		batches_val = create_batches(Data_val, args.batch_size, self.RLvalData)
@@ -144,118 +148,111 @@ class chatBot(object):
 		loss_buffer = deque()
 		for epoch in range(1, args.epochs + 1):			
 			print('************************')
-
 			print('\nEpoch {}'.format(epoch), 'Phase {}'.format(self.model.phase)); sys.stdout.flush()
-			
-			#if self.model.phase == 1:
-			#	total_cost_pre = self.batch_train(Data_train, batches_train[0])					
-				#print('Total Cost Pre: {}'.format(total_cost_pre)); sys.stdout.flush()
-			#	total_loss = total_cost_pre
-			
+				
 			if args.rl and self.model.phase >= 1:
-				Data_train.reset_responses()
-				total_reward, perfect_query_ratio, valid_query_ratio = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData)
-				print('\nRewards:{:.2f} Valid Ratio:{:.2f} Perfect Ratio:{:.2f}'.format(total_reward, valid_query_ratio, perfect_query_ratio))
-				#print('Total Cost API: {}'.format(total_cost_api)); sys.stdout.flush()
-				#print('Total Reward: {}'.format(total_reward)); sys.stdout.flush()
-				#print('Valid Queries: {}'.format(api_metric)); sys.stdout.flush()
-			
+				total_reward, perfect_query_ratio, valid_query_ratio, _ = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData)
+				
+				total_rewards, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData, train=False)
+				print("\nRewards: {0:6.4f} Valid-Ratio:{1:6.4f} Perfect-Ratio:{2:6.4f}".format(total_rewards, valid_query_ratio, perfect_query_ratio))
+				for id, db_results in db_results_map.items():
+					Data_train.responses[id] = db_results
+						
 			if (args.rl and self.model.phase >= 2):
 				total_cost_post = self.batch_train(Data_train, batches_train[0] + batches_train[2], Data_train.responses)		
-				#print('Total Cost Post: {}'.format(total_cost_post)); sys.stdout.flush()
 				total_loss = total_cost_post 
-			
+				
 			# Evaluate Model	
 			if epoch % args.evaluation_interval == 0:
-				#print('*Predict Train*'); 
-				sys.stdout.flush()
-				train_accuracies = self.batch_predict(Data_train, batches_train, self.RLtrainData)
-				#print('*Predict Validation*'); 
-				sys.stdout.flush()
-				val_accuracies = self.batch_predict(Data_val, batches_val, self.RLvalData)
-				#print('')
-				#print('SUMMARY')
-				#print('PHASE {}'.format(self.model.phase))
-				#print('Epoch {}'.format(epoch))
-				#print('Loss: {}'.format(total_loss))
-				print('')
-				if args.bleu_score:
-					print('{0:30} : {1:6f}'.format("Train BLEU", train_accuracies['bleu']))
-				print('{0:30} : {1:6f}'.format("Train Accuracy", train_accuracies['acc']))
-				print('{0:30} : {1:6f}'.format("Train Dialog", train_accuracies['dialog']))
-				print('{0:30} : {1:6f}'.format("Train F1", train_accuracies['f1']))
-				print('{0:30} : {1:6f}'.format("Train API Match", train_accuracies['api']))
-				print('')
-				if args.bleu_score:
-					print('{0:30} : {1:6f}'.format("Validation BLEU", val_accuracies['bleu']))
-				print('{0:30} : {1:6f}'.format("Validation Accuracy", val_accuracies['acc']))
-				print('{0:30} : {1:6f}'.format("Validation Dialog", val_accuracies['dialog']))
-				print('{0:30} : {1:6f}'.format("Validation F1", val_accuracies['f1']))
-				print('{0:30} : {1:6f}'.format("Validation API Match", val_accuracies['api']))
-
-				print('')
-				sys.stdout.flush()
-					
-				'''
-				if self.model.phase == 1:
-					loss_metric = 1.0 - valid_query_ratio
-				else:
-					loss_metric = total_loss
-				loss_buffer.append(loss_metric)
-				if (len(loss_buffer) == 6 and args.rl) or loss_metric == 0.0:
-					val = loss_buffer.popleft()
-					if val < loss_metric or loss_metric == 0.0:
-						if (self.model.phase == 1 and glob['valid_query']):
-							self.model.phase += 1
-							print("PHASE change to {}".format(self.model.phase))
-							print('')
-							#self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
-							#print('MODEL SAVED')
-							#test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True, epoch=epoch)
-							loss_buffer = deque()
-							
-							continue
-				'''
-
-				# Save best model
-				val_to_compare = val_accuracies['comp']
-				if val_to_compare > best_validation_accuracy and self.model.phase == 2:
-					best_validation_accuracy = val_to_compare
-					self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
-					print('MODEL SAVED')
-					test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True, epoch_str=str(epoch))
 				
-					#print('Predict Test'); 
-					sys.stdout.flush()
-					#test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData)
-					if args.task_id < 6:
-						#print('\nPredict OOV'); sys.stdout.flush()
-						test_oov_accuracies = self.batch_predict(Data_test_OOV, batches_oov, self.RLtestOOVData, output=True, epoch_str=str(epoch)+'-OOV')
+				total_rewards, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_val, batches_val[1], self.RLvalData, train=False)
+				for id, db_results in db_results_map.items():
+					Data_val.responses[id] = db_results
+				
+				if total_rewards > glob['best_validation_rewards']:
+					
+					print("\nValidation Rewards:{0:6.4f} Best-So-far:{1:6.4f}".format(total_rewards, glob['best_validation_rewards']))
+					print("\nValidation Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
+					glob['best_validation_rewards'] = total_rewards 
+					if valid_query_ratio > 0.6:
+						glob['valid_query'] = True
+
+					if glob['valid_query']:	
+						_, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test, batches_test[1], self.RLtestData, train=False, output=True, epoch_str=str(epoch))
+						print("Test       Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
+						for id, db_results in db_results_map.items():
+							Data_test.responses[id] = db_results
+							
+						if args.task_id < 6:
+							_, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test_OOV, batches_oov[1], self.RLtestOOVData, train=False, output=True, epoch_str=str(epoch)+'-OOV')
+							print("Test-OOV   Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
+							for id, db_results in db_results_map.items():
+								Data_test_OOV.responses[id] = db_results
+				
+				if glob['valid_query']:
+					train_accuracies = self.batch_predict(Data_train, batches_train, self.RLtrainData)
+					print('')
+					if args.bleu_score:
+						print('{0:30} : {1:6f}'.format("Train BLEU", train_accuracies['bleu']))
+					print('{0:30} : {1:6f}'.format("Train Accuracy", train_accuracies['acc']))
+					print('{0:30} : {1:6f}'.format("Train Dialog", train_accuracies['dialog']))
+					print('{0:30} : {1:6f}'.format("Train F1", train_accuracies['f1']))
+					#print('{0:30} : {1:6f}'.format("Train API Match", train_accuracies['api']))
+					print('')
+					
+					val_accuracies = self.batch_predict(Data_val, batches_val, self.RLvalData)
+					if args.bleu_score:
+						print('{0:30} : {1:6f}'.format("Validation BLEU", val_accuracies['bleu']))
+					print('{0:30} : {1:6f}'.format("Validation Accuracy", val_accuracies['acc']))
+					print('{0:30} : {1:6f}'.format("Validation Dialog", val_accuracies['dialog']))
+					print('{0:30} : {1:6f}'.format("Validation F1", val_accuracies['f1']))
+					#print('{0:30} : {1:6f}'.format("Validation API Match", val_accuracies['api']))
 					
 					print('')
-					#print('SUMMARY')
-					if args.bleu_score:
-						print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))
-					print('{0:30} : {1:6f}'.format("Test Accuracy", test_accuracies['acc']))
-					print('{0:30} : {1:6f}'.format("Test Dialog", test_accuracies['dialog']))
-					print('{0:30} : {1:6f}'.format("Test F1", test_accuracies['f1']))
-					print('{0:30} : {1:6f}'.format("Test API Match", test_accuracies['api']))
-					if args.task_id < 6:
-						print('')
-						if args.bleu_score:
-							print('{0:30} : {1:6f}'.format("Test OOV BLEU", test_oov_accuracies['bleu']))
-						print('{0:30} : {1:6f}'.format("Test OOV Accuracy", test_oov_accuracies['acc']))
-						print('{0:30} : {1:6f}'.format("Test OOV Dialog", test_oov_accuracies['dialog']))
-						print('{0:30} : {1:6f}'.format("Test OOV F1", test_oov_accuracies['f1']))
-						print('{0:30} : {1:6f}'.format("Test OOV API Match", test_oov_accuracies['api']))
-					print('')
 					sys.stdout.flush()
+
+					# Save best model
+					val_to_compare = val_accuracies['comp']
+					if val_to_compare > best_validation_accuracy and self.model.phase == 2:
+						best_validation_accuracy = val_to_compare
+						self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
+						print('MODEL SAVED')
+						test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True, epoch_str=str(epoch))
+					
+						#print('Predict Test'); 
+						sys.stdout.flush()
+						#test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData)
+						if args.task_id < 6:
+							#print('\nPredict OOV'); sys.stdout.flush()
+							test_oov_accuracies = self.batch_predict(Data_test_OOV, batches_oov, self.RLtestOOVData, output=True, epoch_str=str(epoch)+'-OOV')
+						
+						print('')
+						#print('SUMMARY')
+						if args.bleu_score:
+							print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))
+						print('{0:30} : {1:6f}'.format("Test Accuracy", test_accuracies['acc']))
+						print('{0:30} : {1:6f}'.format("Test Dialog", test_accuracies['dialog']))
+						print('{0:30} : {1:6f}'.format("Test F1", test_accuracies['f1']))
+						#print('{0:30} : {1:6f}'.format("Test API Match", test_accuracies['api']))
+						
+						if args.task_id < 6:
+							print('')
+							if args.bleu_score:
+								print('{0:30} : {1:6f}'.format("Test OOV BLEU", test_oov_accuracies['bleu']))
+							print('{0:30} : {1:6f}'.format("Test OOV Accuracy", test_oov_accuracies['acc']))
+							print('{0:30} : {1:6f}'.format("Test OOV Dialog", test_oov_accuracies['dialog']))
+							print('{0:30} : {1:6f}'.format("Test OOV F1", test_oov_accuracies['f1']))
+							#print('{0:30} : {1:6f}'.format("Test OOV API Match", test_oov_accuracies['api']))
+							
+						print('')
+						sys.stdout.flush()
 
 				if (self.model.phase == 1 and glob['valid_query']):
 					self.model.phase += 1
 					print("PHASE change to {}".format(self.model.phase))
 					print('')
-			
+
+	# this function doesnt work due to api prediction code
 	def test(self):
 		'''
 			Test the model
@@ -339,8 +336,8 @@ class chatBot(object):
 		batches_api = batches[1]
 		batches_post = batches[2]
 
-		if args.rl and self.model.phase >= 1:
-			total_reward, perfect_query_ratio, valid_query_ratio = self.batch_train_api(data, batches_api, rl_data, train=False, output=output, epoch_str=epoch_str)
+		#if args.rl and self.model.phase >= 1:
+		#	total_reward, perfect_query_ratio, valid_query_ratio = self.batch_train_api(data, batches_api, rl_data, train=False, output=output, epoch_str=epoch_str)
 			
 		if args.rl and self.model.phase >= 2:
 			predictions = []
@@ -392,7 +389,8 @@ class chatBot(object):
 			acc['f1'] = 0.0
 			acc['comp'] = 0.0
 
-		acc['api'] = (perfect_query_ratio if args.rl and self.model.phase >= 1 else 0.0)
+		# not-used 
+		# acc['api'] = (perfect_query_ratio if args.rl and self.model.phase >= 1 else 0.0)
 		return acc
 	
 	def surface_form(self, batch, parent_ids, predict_ids, actions, batch_index):
@@ -426,7 +424,7 @@ class chatBot(object):
 		'''
 			Train Model for a Batch of Input Data
 		'''
-
+		
 		file=None
 		if output and args.rl and args.rl_mode != 'GT':
 			dirName = 'logs/api/'+self.run_id
@@ -440,13 +438,16 @@ class chatBot(object):
 		total_entries_sum = 0.0
 		valid_entries_sum = 0.0
 		perfect_match_entries_sum = 0.0
-
+		
+		db_results_map = {}
+		
 		#pbar = tqdm(enumerate(batches),total=len(batches))
 		#for i, indecies in pbar:
+
 		for i, indecies in enumerate(batches):
 			idx = indecies[0]
 			indecies = indecies[1:]
-			batch_entry = Batch(data, indecies, args, glob,train=True)
+			batch_entry = Batch(data, indecies, args, glob,train=train)
 
 			# dont run api_predict if we have to just append Ground Truth
 			if args.rl_mode == "GT":
@@ -468,7 +469,7 @@ class chatBot(object):
 					actions = pad_to_answer_size(list(preds), args.max_api_length, True)
 					print(actions)
 
-			responses, batched_actions_and_rewards, high_probable_rewards, total_entries, valid_entries, perfect_match_entries = \
+			db_results, batched_actions_and_rewards, high_probable_rewards, total_entries, valid_entries, perfect_match_entries = \
 					calculate_reward(glob, actions, pred_action_lengths, batch_entry, rl_data, self.db_engine, self.model, args, data, out_file=file, mode=args.rl_mode)
 			total_entries_sum += total_entries
 			valid_entries_sum += valid_entries
@@ -480,20 +481,17 @@ class chatBot(object):
 				for actions_and_rewards in batched_actions_and_rewards:
 					total_cost += self.model.api_fit(batch_entry, actions_and_rewards)
 			
-			for id, response in zip(batch_entry.dialog_ids, responses):
-				if len(response) > 0:
-					data.responses[id] = response
-			#pbar.set_description('RW:{:.2f} AV:{:.2f} AP:{:.2f}'.format(total_reward/(i+1), matched_query_ratio, perfect_query_ratio))
-		
+			for id, response in zip(batch_entry.dialog_ids, db_results):
+				db_results_map[id] = response
+				
+			
 		valid_query_ratio = float(valid_entries_sum)/float(total_entries_sum)
-		glob['valid_query'] = True if valid_query_ratio > 0.6 else False
 		perfect_query_ratio = float(perfect_match_entries_sum)/float(total_entries_sum)	
-		#print('RW:{:.2f} AV:{:.2f} AP:{:.2f}'.format(total_reward, matched_query_ratio, perfect_query_ratio))
 		
 		if output and args.rl and args.rl_mode != 'GT':
 			file.close()
 
-		return total_reward, perfect_query_ratio, valid_query_ratio
+		return total_reward, perfect_query_ratio, valid_query_ratio, db_results_map
 
 	def close_session(self):
 		glob['session'].close()

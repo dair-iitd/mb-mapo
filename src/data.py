@@ -573,8 +573,8 @@ class Batch(Data):
                     word = read[j]
                     if word in self._oov_words[i]:
                         self._answers[i][j] = len(glob['decode_idx']) + self._oov_words[i].index(word)
-                    else:
-                        print("WARNING: Missing the oov word -", word)
+                    #else:
+                    #    print("WARNING: Missing the oov word -", word)
             sys.stdout.flush()
         
     def _all_db_to_unk(self, stories, db_vocab_id, word_drop_prob):

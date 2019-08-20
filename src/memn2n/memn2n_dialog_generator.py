@@ -693,7 +693,7 @@ class MemN2NGeneratorDialog(object):
 				if self._fixed_length_decode:
 					feed_dict[self._rl_decode_length_class_ids] = np.array(actions_and_rewards.rl_decode_length_class_ids)
 		else:
-			feed_dict[self._keep_prob] = 1.0 
+			feed_dict[self._keep_prob] = 1.0	
 		if self._debug:
 			self._print_feed(feed_dict, actions_and_rewards, train)
 		return feed_dict

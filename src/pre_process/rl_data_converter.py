@@ -7,11 +7,12 @@ import json
 from db_engine import DbEngine, QueryGenerator
 
 entities=set([])
+max_total_high_recall_queries = 0
 
 # set to babi or camrest
-dataset="babi"
+dataset="camrest"
 # for babi, set the task
-task=5
+task=3
 
 find_replace={}
 
@@ -229,6 +230,9 @@ def update_kb_links(dialog):
 	return dialog
 
 def convert_file(input_file, output_file, queryGenerator):
+	
+	global max_total_high_recall_queries
+
 	corpus=[]
 	dialog_id=1
 
@@ -317,6 +321,12 @@ def convert_file(input_file, output_file, queryGenerator):
 				input_entities = turn['entities_so_far']
 				output_entities = turn['next_entities']
 				high_recall_queries = queryGenerator.get_high_recall_queries(input_entities, output_entities)
+				if len(high_recall_queries) > max_total_high_recall_queries:
+					max_total_high_recall_queries = len(high_recall_queries)
+					print('input_entities', input_entities)
+					print('output_entities', output_entities)
+					for high_recall_query in high_recall_queries:
+						print("\t", len(high_recall_queries), high_recall_query)
 				turn['high_recall_queries']=high_recall_queries
 			else:
 				turn['high_recall_queries']=[]
@@ -386,10 +396,10 @@ if __name__ == "__main__":
 			input_prefix_no_api = 'dialog-babi-task3-options-'
 			input_prefix =  'dialog-babi-task3-options-with-api-'
 			output_folder = input_folder + "task3/"
-			for file in files:
-				insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
-			#kb_file = input_folder+'dialog-babi-kb-task3.txt'
-			kb_file = input_folder+'dialog-babi-kb-task3-fabricated.txt'
+			#for file in files:
+			#	insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
+			kb_file = input_folder+'dialog-babi-kb-task3.txt'
+			#kb_file = input_folder+'dialog-babi-kb-task3-fabricated.txt'
 		output_prefix = 'dialog-babi-'
 		load_kb_entities(kb_file)
 	else:
@@ -406,3 +416,5 @@ if __name__ == "__main__":
 	for file in files:
 		print("Processing", file)
 		convert_file(input_folder+input_prefix+file, output_folder+output_prefix+file.replace(".txt",".json"), queryGenerator)
+	
+	print("max high recall queries", max_total_high_recall_queries)
