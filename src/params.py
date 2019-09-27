@@ -6,7 +6,7 @@ flags = tf.app.flags
 flags.DEFINE_float("epsilon", 1e-8, "Epsilon value for Adam Optimizer.")
 flags.DEFINE_float("max_grad_norm", 40.0, "Clip gradients to this norm.")
 flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
-flags.DEFINE_integer("epochs", 400, "Number of epochs to train for.")
+flags.DEFINE_integer("epochs", 600, "Number of epochs to train for.")
 
 # Model Params
 flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
@@ -16,6 +16,7 @@ flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matric
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
 flags.DEFINE_integer("beam_width", 6, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 1, "Start Phase for RL training")
+flags.DEFINE_integer("model_index", 1, "integer id when multiple runs are launched for the same param settings")
 
 # Entity Word Drop
 flags.DEFINE_float("word_drop_prob", 0.2, "value to set, if word_drop is set to True")
@@ -38,6 +39,7 @@ flags.DEFINE_string("rl_mode", "HYBRID", 'takes the following values: GT, GREEDY
 flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action before decoding the action')
 flags.DEFINE_integer("max_api_length", 4, "Set the value based on DBEngine and QueryGenerator")
 flags.DEFINE_boolean("split_emb", True, "Use separate embedding for RL encoder")
+flags.DEFINE_integer("rl_warmp_up", 40, "Set the number of epochs for which RL should run before SL")
 
 # Output and Evaluation Specifications
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
@@ -54,7 +56,7 @@ flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
 flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
-#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3-fabricated.txt", "kb file for this task")
+#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-all.txt", "kb file for this task")
 flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt", "kb file for this task")
 #flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
 flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
@@ -77,6 +79,7 @@ def print_params(logging, args):
 		elif args.rl_mode == 'HYBRID':
 			args.beam == True
 			args.beam_width = 4
+		args.rl_warmp_up = 20
 	if "camrest" in args.kb_file:
 		args.max_api_length = 4
 		if args.rl_mode == 'MAPO':
@@ -85,6 +88,7 @@ def print_params(logging, args):
 		elif args.rl_mode == 'HYBRID':
 			args.beam == True
 			args.beam_width = 4
+		args.rl_warmp_up = 40
 
 	'''
 		Print important model parameters
@@ -98,6 +102,8 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('beam_width', args.beam_width))
 	logging.info('[{}] : {}'.format('memory_size', args.memory_size))
 	logging.info('[{}] : {}'.format('phase', args.phase))
+	logging.info('[{}] : {}'.format('model_index', args.model_index))
+	
 	
 	print('\n# {}'.format('Word Drop'))
 	logging.info('[{}] : {}'.format('word_drop', args.word_drop))
@@ -112,6 +118,7 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('rl_mode', args.rl_mode))
 	logging.info('[{}] : {}'.format('max_api_length', args.max_api_length))
 	logging.info('[{}] : {}'.format('fixed_length_decode', args.fixed_length_decode))
+	logging.info('[{}] : {}'.format('rl_warmp_up', args.rl_warmp_up))
 
 	print('\n# {}'.format('Model Type'))
 	logging.info('[{}] : {}'.format('hierarchy', args.hierarchy))

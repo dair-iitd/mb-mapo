@@ -92,10 +92,14 @@ class BasicDecoder(Decoder):
 		self._initial_ids = initial_ids
 		self._state_ids = state_ids
 
+		self._pos_embedding = pos_embedding
+		
+		'''
 		if callable(pos_embedding):
 			self._pos_embedding_fn = pos_embedding
 		else:
 			self._pos_embedding_fn = (lambda ids: embedding_ops.embedding_lookup(pos_embedding, ids))
+		'''
 
 	@property
 	def batch_size(self):
@@ -247,7 +251,7 @@ class BasicDecoder(Decoder):
 				full_sample_ids = tf.argmax(final_dists, axis=-1, output_type=tf.int32)
 				vocab_sample_ids = tf.argmax(vocab_dists_extended, axis=-1, output_type=tf.int32)
 				# final_dists = tf.Print(final_dists, [final_dists], 'printing final_dists', summarize=max_oov_len)
-				full_sample_ids = tf.Print(full_sample_ids, [full_sample_ids], 'printing full_sample_ids', summarize=32)
+				# full_sample_ids = tf.Print(full_sample_ids, [full_sample_ids], 'printing full_sample_ids', summarize=32)
 				return BasicDecoderOutput(final_dists, full_sample_ids), vocab_sample_ids, next_state_ids
 
 	def initialize(self, name=None):
@@ -293,11 +297,12 @@ class BasicDecoder(Decoder):
 			if rl:
 				pos = ops.convert_to_tensor([time], name="pos") 
 				positions = tf.tile(pos, new_batch_size)
-				position_emb = self._pos_embedding_fn(positions)
-				inputs = (inputs, position_emb)
-			else:
-				inputs = (inputs, inputs)
-
+				position_emb = tf.nn.embedding_lookup(self._pos_embedding, positions)
+				#print_time = tf.Print(time, [time, position_emb[0]], message="rl")
+				inputs = tf.add(inputs, position_emb)	
+			#else:
+			#	print_time = tf.Print(time, [time], message="non-rl")
+			
 			cell_outputs, cell_state = self._cell(inputs, state)
 			(cell_outputs, attention, p_gens) = cell_outputs
 			if self._output_layer is not None:

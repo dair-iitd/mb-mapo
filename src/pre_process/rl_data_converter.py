@@ -9,10 +9,18 @@ from db_engine import DbEngine, QueryGenerator
 entities=set([])
 max_total_high_recall_queries = 0
 
+## Camrest - has too many inconsistent entity annotations
+#            after the convertion process "-modified" files will be created
+#            Please use these "-modified" files and delete the others
+
+## babi3 - does not have api_calls in between
+#          after the convertion process "-with-api" files will be created
+#          Please use these "-with-api" files and delete the others
+
 # set to babi or camrest
-dataset="camrest"
+dataset="babi"
 # for babi, set the task
-task=3
+task=5
 
 find_replace={}
 
@@ -244,22 +252,39 @@ def convert_file(input_file, output_file, queryGenerator):
 	prev_user_utt=""
 	api_call_flag=False
 	api_call_str=""
+
+	modified_file_contents = ""
 	
 	with open(input_file) as f:
 		lines = f.readlines()
 		for i in range(0, len(lines)):
 			line=lines[i].strip()
 			if line:
-				_, line = line.split(' ', 1)
+				line_no, line = line.split(' ', 1)
 				if '\t' in line:
 					u, r = line.split('\t')
 					if dataset == "camrest":
 						u = pre_process_camrest(u)
 						r = pre_process_camrest(r)
 
+						modified_file_contents += line_no + " " + u + "\t" + r + "\n"
+					else:
+						modified_file_contents += line_no + " " + line + "\n"
+						
 					if r.startswith("api_call"):
 						api_call_flag=True
-						api_call_str=r
+						# Uncomment this if dontcare is slot specific
+						'''
+						api_call_words = r.split()
+						api_call_str = ""
+						for idx, api_call_word in enumerate(api_call_words):
+							if api_call_word == 'dontcare':
+								api_call_str = api_call_str + " dontcare" + str(idx)
+							else:
+								api_call_str = api_call_str + " " + api_call_word
+						api_call_str = api_call_str.strip()
+						'''
+						api_call_str = r.strip()
 						prev_user_utt=u
 						continue
 					turn = {}
@@ -293,6 +318,8 @@ def convert_file(input_file, output_file, queryGenerator):
 					turn['turn_id']=turn_id
 					turn_id=turn_id+1
 					turns.append(turn)
+				else:
+					modified_file_contents += line_no + " " + line + "\n"
 			else:
 				
 				dialog['turns']=turns
@@ -303,6 +330,7 @@ def convert_file(input_file, output_file, queryGenerator):
 				turn_id=1
 				dialog={}
 				dialog['dialog_id']=dialog_id
+				modified_file_contents += "\n"
 		
 		if len(turns)>0:
 			dialog['turns']=turns
@@ -333,6 +361,10 @@ def convert_file(input_file, output_file, queryGenerator):
 
 	with open(output_file, 'w') as outfile:
 		json.dump(corpus, outfile)
+	
+	modified_file = open(input_file.replace(".txt", "-modified.txt"), "w")
+	modified_file.write(modified_file_contents)
+	modified_file.close()
 
 def insert_api_calls(input_file, output_file):
 	
@@ -384,7 +416,7 @@ def insert_api_calls(input_file, output_file):
 if __name__ == "__main__":
 
 	input_folder = "../../data/dialog-bAbI-tasks/"
-	files = ['trn.txt', 'dev.txt', 'tst.txt']
+	files = ['tst.txt', 'trn.txt', 'dev.txt']
 	
 	if dataset=='babi':
 		files.append('tst-OOV.txt')
@@ -396,10 +428,9 @@ if __name__ == "__main__":
 			input_prefix_no_api = 'dialog-babi-task3-options-'
 			input_prefix =  'dialog-babi-task3-options-with-api-'
 			output_folder = input_folder + "task3/"
-			#for file in files:
-			#	insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
+			for file in files:
+				insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
 			kb_file = input_folder+'dialog-babi-kb-task3.txt'
-			#kb_file = input_folder+'dialog-babi-kb-task3-fabricated.txt'
 		output_prefix = 'dialog-babi-'
 		load_kb_entities(kb_file)
 	else:

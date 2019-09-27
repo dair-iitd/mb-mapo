@@ -199,7 +199,7 @@ class MemN2NGeneratorDialog(object):
 
 			# Initialize Embedding for Position Information
 			if self._rl:
-				P = self._init([self._max_api_length, int(self._embedding_size / 8)])
+				P = self._init([self._max_api_length, int(self._embedding_size)])
 				self.P = tf.Variable(P, name="P")
 
 			with tf.variable_scope("encoder"):

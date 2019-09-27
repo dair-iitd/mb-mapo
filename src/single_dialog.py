@@ -36,7 +36,8 @@ class chatBot(object):
 						+ "_sw-" + str(args.soft_weight) 
 						+ "_wd-" + str(args.word_drop_prob) 
 						+ "_pw-" + str(args.p_gen_loss_weight) 
-						+ "_rlmode-" + str(args.rl_mode))
+						+ "_rlmode-" + str(args.rl_mode)
+						+ "_idx-" + str(args.model_index))
 		self.model_dir = (args.model_dir +  self.run_id + "_model/")
 		if not os.path.exists(self.model_dir):
 			os.makedirs(self.model_dir)
@@ -131,6 +132,9 @@ class chatBot(object):
 			batches_oov = create_batches(Data_test_OOV, args.batch_size, self.RLtestOOVData)
 
 		# Look for previously saved checkpoint
+		
+		#writer = tf.summary.FileWriter("output", glob['session'].graph)
+		#writer.close()
 		if args.save:
 			ckpt = tf.train.get_checkpoint_state(self.model_dir)
 			if ckpt and ckpt.model_checkpoint_path:
@@ -152,44 +156,50 @@ class chatBot(object):
 				
 			if args.rl and self.model.phase >= 1:
 				total_reward, perfect_query_ratio, valid_query_ratio, _ = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData)
-				
-				total_rewards, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData, train=False)
-				print("\nRewards: {0:6.4f} Valid-Ratio:{1:6.4f} Perfect-Ratio:{2:6.4f}".format(total_rewards, valid_query_ratio, perfect_query_ratio))
-				for id, db_results in db_results_map.items():
-					Data_train.responses[id] = db_results
+
+				total_rewards, perfect_query_ratio, valid_query_ratio, train_db_results_map = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData, train=False, output=True, epoch_str="trn-"+str(epoch))
+				print("\nTrain Rewards: {0:6.4f} Valid-Ratio:{1:6.4f} Perfect-Ratio:{2:6.4f}".format(total_rewards, valid_query_ratio, perfect_query_ratio))
 						
-			if (args.rl and self.model.phase >= 2):
+			if (args.rl and self.model.phase >= 2 and epoch > args.rl_warmp_up):
 				total_cost_post = self.batch_train(Data_train, batches_train[0] + batches_train[2], Data_train.responses)		
 				total_loss = total_cost_post 
-				
+			
+			if epoch > 200:
+				glob['valid_query'] = True
+
 			# Evaluate Model	
 			if epoch % args.evaluation_interval == 0:
 				
-				total_rewards, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_val, batches_val[1], self.RLvalData, train=False)
-				for id, db_results in db_results_map.items():
-					Data_val.responses[id] = db_results
+				total_rewards, perfect_query_ratio, valid_query_ratio, valid_db_results_map = self.batch_train_api(Data_val, batches_val[1], self.RLvalData, train=False)
 				
 				if total_rewards > glob['best_validation_rewards']:
 					
 					print("\nValidation Rewards:{0:6.4f} Best-So-far:{1:6.4f}".format(total_rewards, glob['best_validation_rewards']))
 					print("\nValidation Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
 					glob['best_validation_rewards'] = total_rewards 
-					if valid_query_ratio > 0.6:
+					
+					for id, db_results in train_db_results_map.items():
+						Data_train.responses[id] = db_results
+
+					for id, db_results in valid_db_results_map.items():
+						Data_val.responses[id] = db_results
+
+					_, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test, batches_test[1], self.RLtestData, train=False, output=True, epoch_str="tst-"+str(epoch))
+					print("Test       Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
+					for id, db_results in db_results_map.items():
+						Data_test.responses[id] = db_results
+							
+					if args.task_id < 6:
+						_, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test_OOV, batches_oov[1], self.RLtestOOVData, train=False, output=True, epoch_str='tst-OOV-'+str(epoch))
+						print("Test-OOV   Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
+						for id, db_results in db_results_map.items():
+							Data_test_OOV.responses[id] = db_results
+					
+					if valid_query_ratio > 0.5:
 						glob['valid_query'] = True
 
-					if glob['valid_query']:	
-						_, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test, batches_test[1], self.RLtestData, train=False, output=True, epoch_str=str(epoch))
-						print("Test       Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
-						for id, db_results in db_results_map.items():
-							Data_test.responses[id] = db_results
-							
-						if args.task_id < 6:
-							_, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test_OOV, batches_oov[1], self.RLtestOOVData, train=False, output=True, epoch_str=str(epoch)+'-OOV')
-							print("Test-OOV   Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
-							for id, db_results in db_results_map.items():
-								Data_test_OOV.responses[id] = db_results
 				
-				if glob['valid_query']:
+				if glob['valid_query'] and epoch > args.rl_warmp_up:
 					train_accuracies = self.batch_predict(Data_train, batches_train, self.RLtrainData)
 					print('')
 					if args.bleu_score:
@@ -309,6 +319,7 @@ class chatBot(object):
 
 		#pbar = tqdm(enumerate(batches),total=len(train_batches))
 		#for i, indecies in pbar:
+		
 		for i, indecies in enumerate(batches):
 			idx = indecies[0]
 			indecies = indecies[1:]	
@@ -412,7 +423,7 @@ class chatBot(object):
 			if action_surface_form not in action_set:
 				action_set.append(action_surface_form)
 			else:
-				print(action_surface_form)
+				#print(action_surface_form)
 				action_set.append(action_surface_form)
 				hit = True
 		# if hit:			
@@ -448,7 +459,7 @@ class chatBot(object):
 			idx = indecies[0]
 			indecies = indecies[1:]
 			batch_entry = Batch(data, indecies, args, glob,train=train)
-
+			
 			# dont run api_predict if we have to just append Ground Truth
 			if args.rl_mode == "GT":
 				actions = None
@@ -467,7 +478,7 @@ class chatBot(object):
 				else:
 					preds, pred_action_lengths = self.model.api_predict(batch_entry)
 					actions = pad_to_answer_size(list(preds), args.max_api_length, True)
-					print(actions)
+					#print(actions)
 
 			db_results, batched_actions_and_rewards, high_probable_rewards, total_entries, valid_entries, perfect_match_entries = \
 					calculate_reward(glob, actions, pred_action_lengths, batch_entry, rl_data, self.db_engine, self.model, args, data, out_file=file, mode=args.rl_mode)

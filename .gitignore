@@ -28,6 +28,9 @@
 data/*
 *model*
 *.json
+*.txt
+*.xlsx
+*.sh
 
 # OS generated files #
 ######################

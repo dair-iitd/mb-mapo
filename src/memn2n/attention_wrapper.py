@@ -932,7 +932,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
       cell_inputs = self._cell_input_fn(inputs, state.attention)
     '''
 
-    inputs, null = inputs
+    #inputs, null = inputs
     cell_inputs = self._cell_input_fn(inputs, state.attention)
 
     # cell_inputs = inputs

@@ -238,7 +238,8 @@ def get_rl_vocab(db_engine):
     fields = db_engine.fields
     #entities = db_engine.entities
 
-    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare1', 'dontcare2', 'dontcare3', 'dontcare4']
+    #vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare1', 'dontcare2', 'dontcare3', 'dontcare4']
+    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
     #rl_word_idx = dict((c, i + len(vocab)) for i, c in enumerate(fields + entities))
     rl_word_idx = {}
     for i, val in enumerate(vocab):
@@ -324,7 +325,7 @@ def create_batches(data, batch_size, RLdata=None):
             lst.append(index)
             if (i+1) % batch_size == 0: 
                 output.append(lst); lst = [id]
-        if len(lst) > 0:
+        if len(lst) > 1:
             output.append(lst)
         return output
 
@@ -344,6 +345,7 @@ def create_batches(data, batch_size, RLdata=None):
         elif t < api_map[d]:    pre_set.add(i)
         elif t > api_map[d]:    post_set.add(i)
         else:                   api_set.add(i); post_set.add(i) 
+   
     return chunk(pre_set, batch_size, 0), chunk(api_set, batch_size, 1), chunk(post_set, batch_size, 2)
 
 def pad_to_answer_size(pred, size, action=False):

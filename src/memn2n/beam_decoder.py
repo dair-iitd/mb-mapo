@@ -321,7 +321,7 @@ class BeamSearchDecoder(decoder.Decoder):
     else:
       self._embedding_fn = (
           lambda ids: embedding_ops.embedding_lookup(embedding, ids))
-
+    
     if callable(pos_embedding):
       self._pos_embedding_fn = pos_embedding
     else:
@@ -797,9 +797,9 @@ class BeamSearchDecoder(decoder.Decoder):
         pos = ops.convert_to_tensor([time], name="pos") 
         positions = tf.tile(pos, new_batch_size)
         position_emb = self._pos_embedding_fn(positions)
-        inputs = (inputs, position_emb)
+        inputs = tf.add(inputs, position_emb)
       else:
-        inputs = (inputs, inputs)
+        inputs = inputs
 
       cell_outputs, next_cell_state = self._cell(inputs, cell_state)
       (cell_outputs, attention, p_gens) = cell_outputs
