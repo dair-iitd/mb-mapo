@@ -238,8 +238,8 @@ def get_rl_vocab(db_engine):
     fields = db_engine.fields
     #entities = db_engine.entities
 
-    #vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare1', 'dontcare2', 'dontcare3', 'dontcare4']
-    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
+    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare1', 'dontcare2', 'dontcare3', 'dontcare4']
+    #vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
     #rl_word_idx = dict((c, i + len(vocab)) for i, c in enumerate(fields + entities))
     rl_word_idx = {}
     for i, val in enumerate(vocab):

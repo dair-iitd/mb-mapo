@@ -40,6 +40,8 @@ flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action befo
 flags.DEFINE_integer("max_api_length", 4, "Set the value based on DBEngine and QueryGenerator")
 flags.DEFINE_boolean("split_emb", True, "Use separate embedding for RL encoder")
 flags.DEFINE_integer("rl_warmp_up", 40, "Set the number of epochs for which RL should run before SL")
+flags.DEFINE_boolean("filtering", False, "Filter valid queries during inference")
+
 
 # Output and Evaluation Specifications
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
@@ -48,7 +50,7 @@ flags.DEFINE_boolean("save", False, "if True, trains using previously saved mode
 flags.DEFINE_boolean("debug", False, 'if True, enables debug mode (Verbose Errors, but slower)')
 
 # Task Type
-flags.DEFINE_integer("task_id", 3, "bAbI task id, 1 <= id <= 8")
+flags.DEFINE_integer("task_id", 7, "bAbI task id, 1 <= id <= 8")
 flags.DEFINE_boolean('train', False, 'if True, begin to train')
 flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 
@@ -57,8 +59,8 @@ flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory contain
 flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
 #flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-all.txt", "kb file for this task")
-flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt", "kb file for this task")
-#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
+#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt", "kb file for this task")
+flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
 flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
 
 def get_params():
@@ -119,6 +121,7 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('max_api_length', args.max_api_length))
 	logging.info('[{}] : {}'.format('fixed_length_decode', args.fixed_length_decode))
 	logging.info('[{}] : {}'.format('rl_warmp_up', args.rl_warmp_up))
+	logging.info('[{}] : {}'.format('filtering', args.filtering))
 
 	print('\n# {}'.format('Model Type'))
 	logging.info('[{}] : {}'.format('hierarchy', args.hierarchy))

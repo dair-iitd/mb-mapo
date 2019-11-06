@@ -293,15 +293,15 @@ class BasicDecoder(Decoder):
 			# 	position_emb = self._pos_embedding_fn(positions)
 			# 	cell_input_fn = (lambda inputs, attention: array_ops.concat([inputs, attention], -1))
 			# 	inputs = cell_input_fn(inputs, position_emb)
-
+		
+			
+			#Uncomment this for PE
 			if rl:
 				pos = ops.convert_to_tensor([time], name="pos") 
 				positions = tf.tile(pos, new_batch_size)
 				position_emb = tf.nn.embedding_lookup(self._pos_embedding, positions)
 				#print_time = tf.Print(time, [time, position_emb[0]], message="rl")
-				inputs = tf.add(inputs, position_emb)	
-			#else:
-			#	print_time = tf.Print(time, [time], message="non-rl")
+				inputs = tf.add(inputs, position_emb)
 			
 			cell_outputs, cell_state = self._cell(inputs, state)
 			(cell_outputs, attention, p_gens) = cell_outputs

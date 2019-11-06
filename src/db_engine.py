@@ -117,11 +117,25 @@ class DbEngine(object):
 		words = query.strip().split()
 		
 		if (self._data_set == "babi" and len(words) == 5) or (self._data_set == "camrest" and len(words) == 4):
+			'''
 			_, results, _ = self.execute(query)
 			if len(results) > 0:
 				DbEngine.valid_queries[query] = True
 				return True
-		
+			'''
+
+			where_clauses = self.get_where_clauses_from_api_call(query)
+			for where_clause in where_clauses:
+				where_clause_split = where_clause.strip().split(" ")
+				field_name = where_clause_split[0].strip()
+				value = where_clause_split[1].strip()
+				if value not in self._inverted_index[field_name]:
+					DbEngine.valid_queries[query] = False
+					return False
+
+			DbEngine.valid_queries[query] = True
+			return True
+
 		DbEngine.valid_queries[query] = False
 		return False
 		
@@ -214,19 +228,19 @@ class DbEngine(object):
 		if "camrest" in self.kb_file:
 			
 			# api_call dontcare east expensive
-			food  = where_map["R_food"] if "R_food" in where_map.keys() else "dontcare" #"dontcare1"
-			area = where_map["R_area"] if "R_area" in where_map.keys() else "dontcare" #"dontcare2"
-			pricerange  = where_map["R_pricerange"] if "R_pricerange" in where_map.keys() else "dontcare" #"dontcare3"
+			food  = where_map["R_food"] if "R_food" in where_map.keys() else "dontcare1"
+			area = where_map["R_area"] if "R_area" in where_map.keys() else "dontcare2"
+			pricerange  = where_map["R_pricerange"] if "R_pricerange" in where_map.keys() else "dontcare3"
 
 			api_call = "api_call " + food + " " + area + " " + pricerange 
 		
 		elif "babi" in self.kb_file:
 			
 			# api_call japanese bangkok eight moderate
-			cuisine = where_map["R_cuisine"] if "R_cuisine" in where_map.keys() else "dontcare" #"dontcare1"
-			location = where_map["R_location"] if "R_location" in where_map.keys() else "dontcare" #"dontcare2"
-			number = where_map["R_number"] if "R_number" in where_map.keys() else "dontcare" #"dontcare3"
-			price = where_map["R_price"] if "R_price" in where_map.keys() else "dontcare" #"dontcare4"
+			cuisine = where_map["R_cuisine"] if "R_cuisine" in where_map.keys() else "dontcare1"
+			location = where_map["R_location"] if "R_location" in where_map.keys() else "dontcare2"
+			number = where_map["R_number"] if "R_number" in where_map.keys() else "dontcare3"
+			price = where_map["R_price"] if "R_price" in where_map.keys() else "dontcare4"
 			
 			api_call = "api_call " + cuisine + " " + location + " " + number + " " + price
 				
@@ -242,7 +256,7 @@ class DbEngine(object):
 		api_call_arr = api_call.strip().split(" ") 
 			
 		if "camrest" in self.kb_file:
-			'''
+			
 			if api_call_arr[1] != "dontcare1": where_clauses.append('R_food ' + api_call_arr[1])
 			if api_call_arr[2] != "dontcare2": where_clauses.append('R_area ' + api_call_arr[2])
 			if api_call_arr[3] != "dontcare3": where_clauses.append('R_pricerange ' + api_call_arr[3])
@@ -250,10 +264,10 @@ class DbEngine(object):
 			if api_call_arr[1] != "dontcare": where_clauses.append('R_food ' + api_call_arr[1])
 			if api_call_arr[2] != "dontcare": where_clauses.append('R_area ' + api_call_arr[2])
 			if api_call_arr[3] != "dontcare": where_clauses.append('R_pricerange ' + api_call_arr[3])
-
+			'''
 		elif "babi" in self.kb_file:
 			
-			'''
+			
 			if api_call_arr[1] != "dontcare1": where_clauses.append('R_cuisine ' + api_call_arr[1])
 			if api_call_arr[2] != "dontcare2": where_clauses.append('R_location ' + api_call_arr[2])
 			if api_call_arr[3] != "dontcare3": where_clauses.append('R_number ' + api_call_arr[3])
@@ -263,6 +277,7 @@ class DbEngine(object):
 			if api_call_arr[2] != "dontcare": where_clauses.append('R_location ' + api_call_arr[2])
 			if api_call_arr[3] != "dontcare": where_clauses.append('R_number ' + api_call_arr[3])
 			if api_call_arr[4] != "dontcare": where_clauses.append('R_price ' + api_call_arr[4])
+			'''
 		else:
 			
 			print("ERROR: Unknown KB File in DbEngine")
@@ -352,11 +367,11 @@ class QueryGenerator(object):
 
 if __name__ == "__main__":
 
-	kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt"
-	#kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
+	#kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt"
+	kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
 	babi_db = DbEngine(kb_file, "R_name")
 
-	query = 'api_call thai tokyo six cheap'
+	query = 'api_call dontcare1 south expensive'
 	
 	print("Is Query Valid: ", babi_db.is_query_valid(query))
 	
@@ -368,6 +383,7 @@ if __name__ == "__main__":
 			print(result)
 		print("\n-----------------------\n")
 
+	'''
 	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
 	input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'expensive', 'centre', 'afghan', 'turkish', 'king_street_city_centre']
 	output_entities=['anatolia', 'moderate', '30_bridge_street_city_centre']
@@ -375,3 +391,4 @@ if __name__ == "__main__":
 
 	for high_recall_query in high_recall_queries:
 		print(high_recall_query)
+	'''

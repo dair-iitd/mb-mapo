@@ -20,7 +20,7 @@ max_total_high_recall_queries = 0
 # set to babi or camrest
 dataset="babi"
 # for babi, set the task
-task=5
+task=3
 
 find_replace={}
 
@@ -274,7 +274,7 @@ def convert_file(input_file, output_file, queryGenerator):
 					if r.startswith("api_call"):
 						api_call_flag=True
 						# Uncomment this if dontcare is slot specific
-						'''
+						
 						api_call_words = r.split()
 						api_call_str = ""
 						for idx, api_call_word in enumerate(api_call_words):
@@ -283,8 +283,8 @@ def convert_file(input_file, output_file, queryGenerator):
 							else:
 								api_call_str = api_call_str + " " + api_call_word
 						api_call_str = api_call_str.strip()
-						'''
-						api_call_str = r.strip()
+						
+						#api_call_str = r.strip()
 						prev_user_utt=u
 						continue
 					turn = {}
