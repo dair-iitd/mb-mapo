@@ -10,7 +10,7 @@ flags.DEFINE_integer("epochs", 600, "Number of epochs to train for.")
 
 # Model Params
 flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
-flags.DEFINE_integer("batch_size", 64, "Batch size for training.")
+flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
 flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")

@@ -300,10 +300,14 @@ class BasicDecoder(Decoder):
 				pos = ops.convert_to_tensor([time], name="pos") 
 				positions = tf.tile(pos, new_batch_size)
 				position_emb = tf.nn.embedding_lookup(self._pos_embedding, positions)
-				#print_time = tf.Print(time, [time, position_emb[0]], message="rl")
-				inputs = tf.add(inputs, position_emb)
+				#print_position_emb = tf.Print(position_emb,[tf.shape(state[0]), tf.shape(position_emb)], message="rl-dyn")
+				modified_state = state.clone(cell_state=tf.add(state[0], position_emb))
+				#modified_state = state.clone(cell_state=state[0])
+				#inputs = tf.add(inputs, print_position_emb)
+			else:
+				modified_state = state.clone()
 			
-			cell_outputs, cell_state = self._cell(inputs, state)
+			cell_outputs, cell_state = self._cell(inputs, modified_state)
 			(cell_outputs, attention, p_gens) = cell_outputs
 			if self._output_layer is not None:
 				cell_outputs = self._output_layer(cell_outputs)

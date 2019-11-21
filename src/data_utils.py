@@ -172,7 +172,7 @@ def parse_dialogs(file, rl, sort):
                         trap_next = True
                         trap_u = u[:]
                     continue
-                data.append((context[:], u[:], r[:], dialog_id, turn_id, database))
+                data.append((context[:]+u[:], u[:], r[:], dialog_id, turn_id, database))
                 u.extend(['$u', '#{}'.format(turn_id)])
                 r.extend(['$r', '#{}'.format(turn_id)])
                 context.append(u); context.append(r)
@@ -238,8 +238,8 @@ def get_rl_vocab(db_engine):
     fields = db_engine.fields
     #entities = db_engine.entities
 
-    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare1', 'dontcare2', 'dontcare3', 'dontcare4']
-    #vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
+    #vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare1', 'dontcare2', 'dontcare3', 'dontcare4']
+    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
     #rl_word_idx = dict((c, i + len(vocab)) for i, c in enumerate(fields + entities))
     rl_word_idx = {}
     for i, val in enumerate(vocab):

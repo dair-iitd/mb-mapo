@@ -38,6 +38,7 @@ from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.platform import tf_logging
 from tensorflow.python.util import nest
+from tensorflow.contrib.seq2seq import AttentionWrapperState
 
 __all__ = [
     "BeamSearchDecoderOutput",
@@ -689,7 +690,7 @@ class BeamSearchDecoder(decoder.Decoder):
           # mask = tf.reshape(mask, [batch_size, decoder_vocab_size_n])
           # vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
           vocab_dists = tf.multiply(vocab_dists, mask)
-          vocab_dists = tf.reshape(vocab_dists, [batch_size, decosder_vocab_size_n])
+          vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
           p_gens = tf.map_fn(one_minus_fn, p_gens)
         else:
           # vocab_dists = tf.Print(vocab_dists, [vocab_dists], '\nprinting vocab_dists', summarize=6)
@@ -799,10 +800,15 @@ class BeamSearchDecoder(decoder.Decoder):
         pos = ops.convert_to_tensor([time], name="pos") 
         positions = tf.tile(pos, new_batch_size)
         position_emb = self._pos_embedding_fn(positions)
-        inputs = tf.add(inputs, position_emb)
-      
-      
-      cell_outputs, next_cell_state = self._cell(inputs, cell_state)
+        #print_position_emb = tf.Print(position_emb, [tf.shape(cell_state[0]), tf.shape(position_emb)], message="rl-bd")
+        #AttentionWrapperState(cell_state, attention, time, alignments, alignment_history, attention_state)
+        modified_cell_state = cell_state.clone(cell_state=tf.add(cell_state[0], position_emb))
+        #modified_cell_state = cell_state.clone(cell_state=cell_state[0])
+        #inputs = tf.add(inputs, print_position_emb)
+      else:
+        modified_cell_state = cell_state.clone()
+
+      cell_outputs, next_cell_state = self._cell(inputs, modified_cell_state)
       (cell_outputs, attention, p_gens) = cell_outputs
 
       if self._output_layer is not None:

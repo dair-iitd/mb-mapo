@@ -41,6 +41,7 @@ def process_file(file):
 	test_bleu = ""
 	test_f1 = ""
 
+	value_map = {}
 	for idx, line in enumerate(lines):
 		if "Validation Rewards:" in line:
 			validation_rewards_line = line
@@ -48,24 +49,39 @@ def process_file(file):
 			test_rewards_line = lines[idx]
 			test_ratios_line = lines[idx+1]
 		if "Test BLEU" in line:
+			value_map['validation_rewards_line'] = validation_rewards_line
+			value_map['test_rewards_line'] = test_rewards_line
+			value_map['test_ratios_line'] = test_ratios_line
 			test_bleu = line
 			test_f1 = lines[idx+3]
+
+	if 'validation_rewards_line' not in value_map:
+		print("skipping", file)
+		return numbers_map
 	
+	validation_rewards_line = value_map['validation_rewards_line'] 
+	test_rewards_line = value_map['test_rewards_line']
+	test_ratios_line = value_map['test_ratios_line']
+
 	if validation_rewards_line == "":
+		print("skipping", file)
 		return numbers_map
 
-	validation_rewards = float((validation_rewards_line.replace("Validation Rewards:", "")).split(' ')[0])
-	numbers_map['validation_rewards'] = validation_rewards
+	if validation_rewards_line != "":
+		validation_rewards = float((validation_rewards_line.replace("Validation Rewards:", "")).split(' ')[0])
+		numbers_map['validation_rewards'] = validation_rewards
 
-	test_rewards_line = float((test_rewards_line.replace("Test       Rewards:", "")).split(' ')[0])
-	numbers_map['test_rewards'] = test_rewards_line
+	if test_rewards_line != "":
+		test_rewards_line = float((test_rewards_line.replace("Test       Rewards:", "")).split(' ')[0])
+		numbers_map['test_rewards'] = test_rewards_line
 
-	test_ratios_line = test_ratios_line.replace("Test", "").strip()
-	test_ratios_line_split = test_ratios_line.split(" ")
-	valid_ratio = float(test_ratios_line_split[0].replace("Valid-Ratio:", ""))
-	perfect_ratio = float(test_ratios_line_split[1].replace("Perfect-Ratio:", ""))
-	numbers_map['valid_ratio'] = valid_ratio
-	numbers_map['perfect_ratio'] = perfect_ratio
+	if test_ratios_line != "":
+		test_ratios_line = test_ratios_line.replace("Test", "").strip()
+		test_ratios_line_split = test_ratios_line.split(" ")
+		valid_ratio = float(test_ratios_line_split[0].replace("Valid-Ratio:", ""))
+		perfect_ratio = float(test_ratios_line_split[1].replace("Perfect-Ratio:", ""))
+		numbers_map['valid_ratio'] = valid_ratio
+		numbers_map['perfect_ratio'] = perfect_ratio
 
 	if test_bleu.strip() != "":
 		test_bleu = float(test_bleu.replace("Test BLEU                      : ", "").strip())
