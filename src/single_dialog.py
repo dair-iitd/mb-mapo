@@ -164,7 +164,7 @@ class chatBot(object):
 				total_cost_post = self.batch_train(Data_train, batches_train[0] + batches_train[2], Data_train.responses)		
 				total_loss = total_cost_post 
 			
-			if epoch > 200:
+			if epoch > args.rl_warmp_up:
 				glob['valid_query'] = True
 
 			# Evaluate Model	

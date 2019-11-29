@@ -301,8 +301,8 @@ class BasicDecoder(Decoder):
 				positions = tf.tile(pos, new_batch_size)
 				position_emb = tf.nn.embedding_lookup(self._pos_embedding, positions)
 				#print_position_emb = tf.Print(position_emb,[tf.shape(state[0]), tf.shape(position_emb)], message="rl-dyn")
-				modified_state = state.clone(cell_state=tf.add(state[0], position_emb))
-				#modified_state = state.clone(cell_state=state[0])
+				#modified_state = state.clone(cell_state=tf.add(state[0], position_emb))
+				modified_state = state.clone()
 				#inputs = tf.add(inputs, print_position_emb)
 			else:
 				modified_state = state.clone()

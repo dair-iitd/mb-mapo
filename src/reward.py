@@ -382,6 +382,8 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 	total_high_recall_actions_rewards = 0
 	
 	if mode == "HYBRID":
+		# width set to 2 for SCST
+		# set to one for just MIL
 		total_width = 2
 	elif mode == "MAPO":
 		total_width = beam_width

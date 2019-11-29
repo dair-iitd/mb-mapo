@@ -17,8 +17,10 @@ max_total_high_recall_queries = 0
 #          after the convertion process "-with-api" files will be created
 #          Please use these "-with-api" files and delete the others
 
+## dstc2
+
 # set to babi or camrest
-dataset="babi"
+dataset="dstc2"
 # for babi, set the task
 task=3
 
@@ -95,7 +97,7 @@ def populate_find_replace():
 	find_replace['cheap european']='cheap modern_european'
 
 # Module to clean up utterances CamRest dataset
-def pre_process_camrest(utt):
+def pre_process(utt):
 	for key in find_replace.keys():
 		if key in utt:
 			utt = utt.replace(key, find_replace[key])
@@ -263,9 +265,9 @@ def convert_file(input_file, output_file, queryGenerator):
 				line_no, line = line.split(' ', 1)
 				if '\t' in line:
 					u, r = line.split('\t')
-					if dataset == "camrest":
-						u = pre_process_camrest(u)
-						r = pre_process_camrest(r)
+					if dataset == "camrest" or dataset == "dstc2":
+						u = pre_process(u)
+						r = pre_process(r)
 
 						modified_file_contents += line_no + " " + u + "\t" + r + "\n"
 					else:
@@ -284,14 +286,26 @@ def convert_file(input_file, output_file, queryGenerator):
 								api_call_str = api_call_str + " " + api_call_word
 						api_call_str = api_call_str.strip()
 						'''
-						api_call_str = r.strip()
+
+						# in dstc2 the field name is specified instead of dontcare
+						# this snippet changes them to dontcare
+						api_call_words = r.split()
+						api_call_str = ""
+						for idx, api_call_word in enumerate(api_call_words):
+							if "R_" in api_call_word:
+								api_call_str = api_call_str + " dontcare"
+							else:
+								api_call_str = api_call_str + " " + api_call_word
+						api_call_str = api_call_str.strip()
+
+						#api_call_str = r.strip()
 						
 						prev_user_utt=u
 						continue
 					turn = {}
 					
 					turn['user'] = {}
-					if api_call_flag and dataset == "camrest":
+					if api_call_flag and (dataset == "camrest" or dataset == "dstc2"):
 						u = prev_user_utt
 					turn['user']['utt']=u
 					kb_entities=get_entities(u)
@@ -301,7 +315,7 @@ def convert_file(input_file, output_file, queryGenerator):
 					turn['agent']={}
 					turn['agent']['utt']=r
 					if api_call_flag==True:
-						if (dataset == "camrest") or (dataset == "babi" and  u == "<SILENCE>"):
+						if dataset == "camrest" or dataset == "dstc2" or (dataset == "babi" and  u == "<SILENCE>"):
 							turn['make_api_call']=True
 							turn['api_call']=api_call_str
 						else:
@@ -414,6 +428,36 @@ def insert_api_calls(input_file, output_file):
 
 	outfile.close()
 
+def remove_dstc2_dialogs(input_file, output_file):
+	
+	outfile = open(output_file, "w")
+	
+	dialogue = ""
+	total = 0
+	with open(input_file) as f:
+		lines = f.readlines()
+		for i in range(0, len(lines)):
+			line=lines[i].strip()
+			if line:
+				dialogue += line + "\n"	
+			else:
+				count = dialogue.count("api_call")
+				if count <= 1:
+					outfile.write(dialogue)
+					outfile.write("\n")
+					total += 1
+				dialogue = ""
+	
+	if dialogue != "":
+		count = dialogue.count("api_call")
+		if count <= 1:
+			outfile.write(dialogue)
+			outfile.write("\n")
+			total += 1
+
+	print(total, input_file)
+	outfile.close()
+
 if __name__ == "__main__":
 
 	input_folder = "../../data/dialog-bAbI-tasks/"
@@ -433,6 +477,16 @@ if __name__ == "__main__":
 				insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
 			kb_file = input_folder+'dialog-babi-kb-task3.txt'
 		output_prefix = 'dialog-babi-'
+		load_kb_entities(kb_file)
+	elif dataset=="dstc2":
+		populate_find_replace()
+		input_prefix_unfiltered = 'dialog-babi-task6-dstc2-'
+		input_prefix = 'dialog-babi-task6-dstc2-filtered-'
+		for file in files:
+			remove_dstc2_dialogs(input_folder+input_prefix_unfiltered+file, input_folder+input_prefix+file)
+		output_prefix = 'dialog-babi-task6-dstc2-'
+		output_folder = input_folder + "task6/"
+		kb_file = input_folder+'dialog-dstc2-kb-all.txt'
 		load_kb_entities(kb_file)
 	else:
 		populate_find_replace()

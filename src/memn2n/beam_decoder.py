@@ -802,8 +802,8 @@ class BeamSearchDecoder(decoder.Decoder):
         position_emb = self._pos_embedding_fn(positions)
         #print_position_emb = tf.Print(position_emb, [tf.shape(cell_state[0]), tf.shape(position_emb)], message="rl-bd")
         #AttentionWrapperState(cell_state, attention, time, alignments, alignment_history, attention_state)
-        modified_cell_state = cell_state.clone(cell_state=tf.add(cell_state[0], position_emb))
-        #modified_cell_state = cell_state.clone(cell_state=cell_state[0])
+        #modified_cell_state = cell_state.clone(cell_state=tf.add(cell_state[0], position_emb))
+        modified_cell_state = cell_state.clone()
         #inputs = tf.add(inputs, print_position_emb)
       else:
         modified_cell_state = cell_state.clone()

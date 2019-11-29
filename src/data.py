@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import sys
+#import pprint
 from itertools import chain
 
 ## Special Indecies
@@ -477,7 +478,9 @@ class Batch(Data):
             sentence_sizes = []     
             story_string = []       
             oov_ids = []            
-            
+            #print("")
+            #print(len(self._stories), len(self._dialog_ids), i)
+            #pprint.pprint(self._rldata[self._dialog_ids[i]])
             api_call_turns = self._rldata[self._dialog_ids[i]]["api_call_turns"]
             api_call_turn_id = -1
             if len(api_call_turns) > 0:

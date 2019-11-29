@@ -26,6 +26,8 @@ class DbEngine(object):
 			self._data_set = "babi"
 		elif 'camrest' in kb_file:
 			self._data_set = "camrest"
+		elif 'dstc2' in kb_file:
+			self._data_set = "dstc2"
 		else:
 			print("ERROR: unknown kb file")
 			sys.exit()
@@ -116,7 +118,7 @@ class DbEngine(object):
 
 		words = query.strip().split()
 		
-		if (self._data_set == "babi" and len(words) == 5) or (self._data_set == "camrest" and len(words) == 4):
+		if (self._data_set == "babi" and len(words) == 5) or (self._data_set == "camrest" and len(words) == 4) or (self._data_set == "dstc2" and len(words) == 4):
 			'''
 			_, results, _ = self.execute(query)
 			if len(results) > 0:
@@ -244,6 +246,15 @@ class DbEngine(object):
 			price = where_map["R_price"] if "R_price" in where_map.keys() else "dontcare"
 			
 			api_call = "api_call " + cuisine + " " + location + " " + number + " " + price
+		
+		elif "dstc2" in self.kb_file:
+			
+			# api_call vietnamese north cheap
+			cuisine = where_map["R_cuisine"] if "R_cuisine" in where_map.keys() else "dontcare"
+			location = where_map["R_location"] if "R_location" in where_map.keys() else "dontcare"
+			price = where_map["R_price"] if "R_price" in where_map.keys() else "dontcare"
+			
+			api_call = "api_call " + cuisine + " " + location + " " + price
 				
 		else:
 			print("ERROR: Unknown KB File in DbEngine")
@@ -278,7 +289,11 @@ class DbEngine(object):
 			if api_call_arr[2] != "dontcare": where_clauses.append('R_location ' + api_call_arr[2])
 			if api_call_arr[3] != "dontcare": where_clauses.append('R_number ' + api_call_arr[3])
 			if api_call_arr[4] != "dontcare": where_clauses.append('R_price ' + api_call_arr[4])
-			
+		
+		elif "dstc2" in self.kb_file:
+			if api_call_arr[1] != "dontcare" and api_call_arr[1] != "R_cuisine": where_clauses.append('R_cuisine ' + api_call_arr[1])
+			if api_call_arr[2] != "dontcare" and api_call_arr[2] != "R_location": where_clauses.append('R_location ' + api_call_arr[2])
+			if api_call_arr[3] != "dontcare" and api_call_arr[3] != "R_price": where_clauses.append('R_price ' + api_call_arr[3])
 		else:
 			
 			print("ERROR: Unknown KB File in DbEngine")
@@ -367,7 +382,7 @@ class QueryGenerator(object):
 		return high_recall_queries
 
 if __name__ == "__main__":
-
+	'''
 	#kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt"
 	kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
 	babi_db = DbEngine(kb_file, "R_name")
@@ -384,7 +399,6 @@ if __name__ == "__main__":
 			print(result)
 		print("\n-----------------------\n")
 
-	'''
 	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
 	input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'expensive', 'centre', 'afghan', 'turkish', 'king_street_city_centre']
 	output_entities=['anatolia', 'moderate', '30_bridge_street_city_centre']
@@ -393,3 +407,26 @@ if __name__ == "__main__":
 	for high_recall_query in high_recall_queries:
 		print(high_recall_query)
 	'''
+
+	kb_file="../data/dialog-bAbI-tasks/dialog-dstc2-kb-all.txt"
+	babi_db = DbEngine(kb_file, "R_name")
+
+	query = 'api_call dontcare west moderate'
+	
+	print("Is Query Valid: ", babi_db.is_query_valid(query))
+	
+	if babi_db.is_query_valid(query):
+		select_fields, results, result_entities_set = babi_db.execute(query)
+		results = babi_db.get_formatted_results(select_fields, results)
+		print("")
+		for result in results:
+			print(result)
+		print("\n-----------------------\n")
+
+	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
+	input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'italian', 'moderate', 'west', 'turkish', 'king_street_city_centre']
+	output_entities=['saint_johns_chop_house_post_code', 'prezzo_address']
+	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities)
+
+	for high_recall_query in high_recall_queries:
+		print(high_recall_query)

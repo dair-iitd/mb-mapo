@@ -9,17 +9,17 @@ flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
 flags.DEFINE_integer("epochs", 600, "Number of epochs to train for.")
 
 # Model Params
-flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
-flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
+flags.DEFINE_float("learning_rate", 0.0025, "Learning rate for Adam Optimizer.")
+flags.DEFINE_integer("batch_size", 16, "Batch size for training.")
 flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matrices.")
+flags.DEFINE_integer("embedding_size", 64, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
 flags.DEFINE_integer("beam_width", 6, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 1, "Start Phase for RL training")
 flags.DEFINE_integer("model_index", 1, "integer id when multiple runs are launched for the same param settings")
 
 # Entity Word Drop
-flags.DEFINE_float("word_drop_prob", 0.2, "value to set, if word_drop is set to True")
+flags.DEFINE_float("word_drop_prob", 0.1, "value to set, if word_drop is set to True")
 flags.DEFINE_boolean('word_drop', True, 'if True, drop db words in story')
 
 # PGen Loss
@@ -50,7 +50,7 @@ flags.DEFINE_boolean("save", False, "if True, trains using previously saved mode
 flags.DEFINE_boolean("debug", False, 'if True, enables debug mode (Verbose Errors, but slower)')
 
 # Task Type
-flags.DEFINE_integer("task_id", 7, "bAbI task id, 1 <= id <= 8")
+flags.DEFINE_integer("task_id", 6, "bAbI task id, 1 <= id <= 8")
 flags.DEFINE_boolean('train', False, 'if True, begin to train')
 flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 
@@ -60,7 +60,8 @@ flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
 #flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-all.txt", "kb file for this task")
 #flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt", "kb file for this task")
-flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
+#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
+flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-dstc2-kb-all.txt", "kb file for this task")
 flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
 
 def get_params():
@@ -91,7 +92,15 @@ def print_params(logging, args):
 			args.beam == True
 			args.beam_width = 4
 		args.rl_warmp_up = 40
-
+	if "dstc2" in args.kb_file:
+		args.max_api_length = 4
+		if args.rl_mode == 'MAPO':
+			args.beam == True
+			args.beam_width = 32
+		elif args.rl_mode == 'HYBRID':
+			args.beam == True
+			args.beam_width = 8
+		args.rl_warmp_up = 20
 	'''
 		Print important model parameters
 	'''
