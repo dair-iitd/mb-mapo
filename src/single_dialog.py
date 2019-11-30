@@ -20,7 +20,7 @@ from params import get_params, print_params
 from reward import calculate_reward
 from six.moves import range, reduce
 from sklearn import metrics
-#from tqdm import tqdm
+from tqdm import tqdm
 
 args = get_params()
 glob = {}
@@ -59,13 +59,15 @@ class chatBot(object):
 		# 2) Build RL Vocab for RL-Decoder
 		if args.rl:
 			self.db_engine = DbEngine(args.kb_file, "R_name")
-			self.RLtrainData, self.RLtestData, self.RLvalData, self.RLtestOOVData = load_RL_data(args.data_dir, args.task_id)
+			self.RLtrainData, self.RLvalData = load_rl_data(args.data_dir, args.task_id)
+			self.api_turns = get_api_turns(self.RLtrainData)
 			if args.fixed_length_decode:
 				glob['rl_decode_length_vs_index'], glob['rl_decode_length_lookup_array'] = get_rl_decode_length_vs_index(self.RLtrainData, self.RLvalData)
 			glob['rl_idx'], glob['idx_rl'], glob['fields'], glob['rl_vocab_size'], glob['constraint_mask'], glob['state_mask'] = get_rl_vocab(self.db_engine)
 			print("RL Vocab Size : {}".format(glob['rl_vocab_size'])); sys.stdout.flush()
 		else:
 			self.RLtrainData = self.RLtestData = self.RLvalData = self.RLtestOOVData = None
+			self.api_turns = None
 
 		# 3) Build the Context Vocabulary
 		self.build_vocab(self.trainData)
@@ -102,13 +104,36 @@ class chatBot(object):
 			Train the model
 		'''
 		print("------------------------")
-		Data_train = Data(self.trainData, args, glob, self.RLtrainData)
+		Data_train = Data(self.trainData, args, glob, self.RLtrainData, api_turns=self.api_turns)
 		n_train = len(Data_train.stories)
 		print("Training Size", n_train)
 
-		Data_val = Data(self.valData, args, glob, self.RLvalData)
-		n_val = len(Data_val.stories)
-		print("Validation Size", n_val)
+		# Data_val = Data(self.valData, args, glob, self.RLvalData)
+		# n_val = len(Data_val.stories)
+		# print("Validation Size", n_val)
+
+		if args.rl:			
+			## Train api call module and create preprocessed test and testOOV rl data
+			batches_train = create_batches(Data_train, args.batch_size)
+			for epoch in range(1, args.epochs + 1):
+				print('Epoch', epoch)
+				loss = self.batch_train_api_call(Data_train, batches_train)
+				##TODO: Add early stop on loss
+				if loss == 0.0:
+					break
+
+			## Use model to predict test api positions
+			Data_test = Data(self.testData, args, glob, None)
+			batches_test = create_batches(Data_test, args.batch_size)
+			predictions = self.batch_predict_api_call(Data_test, batches_test)
+			## TODO: Calculate accuracy and create new rl preprocessed files
+			self.RLtestData = load_rl_test_data(args.data_dir, args.task_id)
+
+			Data_test = Data(self.testOOVData, args, glob, None)
+			batches_test = create_batches(Data_test, args.batch_size)
+			predictions = self.batch_predict_api_call(Data_test, batches_test)
+			## TODO: Calculate accuracy and create new rl preprocessed files
+			self.RLtestOOVData = load_rl_test_data(args.data_dir, args.task_id, oov=True)
 
 		Data_test = Data(self.testData, args, glob, self.RLtestData)
 		n_test = len(Data_test.stories)
@@ -125,11 +150,11 @@ class chatBot(object):
 			glob['best_validation_rewards'] = 0.0
 
 		# Create Batches
-		batches_train = create_batches(Data_train, args.batch_size, self.RLtrainData)
-		batches_val = create_batches(Data_val, args.batch_size, self.RLvalData)
-		batches_test = create_batches(Data_test, args.batch_size, self.RLtestData)
+		batches_train = create_split_batches(Data_train, args.batch_size, self.RLtrainData)
+		batches_val = create_split_batches(Data_val, args.batch_size, self.RLvalData)
+		batches_test = create_split_batches(Data_test, args.batch_size, self.RLtestData)
 		if args.task_id < 6:
-			batches_oov = create_batches(Data_test_OOV, args.batch_size, self.RLtestOOVData)
+			batches_oov = create_split_batches(Data_test_OOV, args.batch_size, self.RLtestOOVData)
 
 		# Look for previously saved checkpoint
 		
@@ -277,8 +302,27 @@ class chatBot(object):
 		else:
 			print("...no checkpoint found...")
 
+		## Create preprocessed test and testOOV rl data
 		if args.OOV:
-			Data_test = Data(self.testOOVData, args, glob,  self.RLtestOOVData)
+			Data_test = Data(self.testOOVData, args, glob, None)
+			n_test = len(Data_test_OOV.stories)
+			print("Test OOV Size", n_test)
+			prefix = "Test OOV"
+		else:
+			Data_test = Data(self.testData, args, glob, None)
+			n_test = len(Data_test.stories)
+			print("Test Size", n_test)
+			prefix = "Test"
+		sys.stdout.flush()
+
+		batches_test = create_batches(Data_test, args.batch_size)
+		predictions = self.batch_predict_api_call(Data_test, batches_test)
+		## TODO: Calculate accuracy and create new rl preprocessed files
+		self.RLtestData = load_rl_test_data(args.data_dir, args.task_id, oov=args.OOV)
+
+		## Create new dataset based on RL data files
+		if args.OOV:
+			Data_test = Data(self.testOOVData, args, glob,  self.RLtestData)
 			n_test = len(Data_test_OOV.stories)
 			print("Test OOV Size", n_test)
 			prefix = "Test OOV"
@@ -290,11 +334,10 @@ class chatBot(object):
 		sys.stdout.flush()
 
 		print('*Predict Test*'); sys.stdout.flush()
+		batches_test = create_split_batches(Data_test, args.batch_size, self.RLtestData)
 		if args.OOV:
-			batches_test = create_batches(Data_test, args.batch_size, self.RLtestOOVData)
-			test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestOOVData, output=True, epoch_str="test-OOV")
+			test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True, epoch_str="test-OOV")
 		else:
-			batches_test = create_batches(Data_test, args.batch_size, self.RLtestData)
 			test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData, output=True, epoch_str="test")
 
 		print('-----------------------')
@@ -320,17 +363,17 @@ class chatBot(object):
 		total_pgen = 0.0	# Pgen Loss
 
 		#pbar = tqdm(enumerate(batches),total=len(train_batches))
-		#for i, indecies in pbar:
+		#for i, indices in pbar:
 		
-		for i, indecies in enumerate(batches):
-			idx = indecies[0]
-			indecies = indecies[1:]	
-			if len(indecies) == 0:
+		for i, indices in enumerate(batches):
+			idx = indices[0]
+			indices = indices[1:]	
+			if len(indices) == 0:
 				continue
 			if idx == 2:
-				batch_entry = Batch(data, indecies, args, glob, responses, train=True)
+				batch_entry = Batch(data, indices, args, glob, responses, train=True)
 			else:
-				batch_entry = Batch(data, indecies, args, glob, None, train=True)
+				batch_entry = Batch(data, indices, args, glob, None, train=True)
 			cost_t, seq_loss, pgen_loss = self.model.fit(batch_entry)
 			total_seq += seq_loss
 			total_pgen += pgen_loss
@@ -339,6 +382,27 @@ class chatBot(object):
 
 		print('\nTotal L:{:.2f}, Sequence L:{:.2f}, P-Gen L:{:.2f}'.format(total_cost,total_seq,total_pgen))
 		return total_cost
+
+	def batch_train_api_call(self, data, train_batches):
+		'''
+			Train Model for a Batch of Input Data
+		'''
+		idxs = range(len(train_batches))
+		batches = train_batches.copy()
+		np.random.shuffle(batches)
+		total_loss = 0.0	# Total Loss
+		
+		pbar = tqdm(enumerate(batches),total=len(train_batches))
+		for i, indices in pbar:
+		# for i, indices in enumerate(batches):
+			if len(indices) == 0:
+				continue
+			batch_entry = Batch(data, indices, args, glob, None, train=True)
+			loss_t, logits, gold = self.model.fit_api_call(batch_entry)
+			total_loss += loss_t
+			pbar.set_description('TL:{:.2f}'.format(total_loss/(i+1)))
+		print('\nTotal L:{:.2f}'.format(total_loss))
+		return total_loss
 
 	def batch_predict(self, data, batches, rl_data, output=False, epoch_str=""):
 		'''
@@ -365,16 +429,16 @@ class chatBot(object):
 
 			
 			#pbar = tqdm(enumerate(batches),total=len(batches))
-			#for i, indecies in pbar:
-			for i, indecies in enumerate(batches):
-				idx = indecies[0]
-				indecies = indecies[1:]
-				if len(indecies) == 0:
+			#for i, indices in pbar:
+			for i, indices in enumerate(batches):
+				idx = indices[0]
+				indices = indices[1:]
+				if len(indices) == 0:
 					continue
 				# Get predictions
-				if i < post_index: 	data_batch = Batch(data, indecies, args, glob, None)
+				if i < post_index: 	data_batch = Batch(data, indices, args, glob, None)
 				elif self.model.phase < 2: break
-				else: 				data_batch = Batch(data, indecies, args, glob, data.responses)
+				else: 				data_batch = Batch(data, indices, args, glob, data.responses)
 				
 				if args.simple_beam:
 					parent_ids, predict_ids = self.model.predict(data_batch)
@@ -405,6 +469,21 @@ class chatBot(object):
 		# not-used 
 		# acc['api'] = (perfect_query_ratio if args.rl and self.model.phase >= 1 else 0.0)
 		return acc
+
+	def batch_predict_api_call(self, data, batches):
+		'''
+			Get Predictions for Input Data batchwise
+		'''
+		preds = []
+		for i, indices in enumerate(batches):
+			if len(indices) == 0:
+				continue
+			# Get predictions
+			print('indices', indices)
+			batch_entry = Batch(data, indices, args, glob, None)
+			preds_t = self.model.predict_api_call(batch_entry)
+			preds += preds_t
+		return preds
 	
 	def surface_form(self, batch, parent_ids, predict_ids, actions, batch_index):
 		rl_oov_words = batch.rl_oov_words
@@ -455,12 +534,13 @@ class chatBot(object):
 		db_results_map = {}
 		
 		#pbar = tqdm(enumerate(batches),total=len(batches))
-		#for i, indecies in pbar:
+		#for i, indices in pbar:
 
-		for i, indecies in enumerate(batches):
-			idx = indecies[0]
-			indecies = indecies[1:]
-			batch_entry = Batch(data, indecies, args, glob,train=train)
+		for i, indices in enumerate(batches):
+			print('batch', i)
+			idx = indices[0]
+			indices = indices[1:]
+			batch_entry = Batch(data, indices, args, glob, train=train)
 			
 			# dont run api_predict if we have to just append Ground Truth
 			if args.rl_mode == "GT":

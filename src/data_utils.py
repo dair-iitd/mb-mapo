@@ -14,7 +14,9 @@ from sklearn.metrics import f1_score
 
 __all__ =  ["get_decoder_vocab", 
             "load_dialog_task", 
-            "load_RL_data",
+            "load_rl_data",
+            "load_rl_test_data",
+            "get_api_turns",
             "get_rl_vocab",
             "pad_to_answer_size", 
             "create_batches",
@@ -191,29 +193,27 @@ def parse_dialogs(file, rl, sort):
 #########                                RL Helper Functions                             ##########
 ###################################################################################################
 
-def load_RL_data(data_dir, task_id):
-    ''' 
-        Load Train, Test, Validation RL Preprocessed Data
+def parse_json(datafile):
     '''
+        Create a 2-level dictionary to access preprocessed data
+        key1 = dialog_id ; key2 = turn_id 
+    '''
+    json_object = json.load(open(datafile))
+    parsed = dict()
+    for obj in json_object:
+        api_call_turns = []
+        parsed[obj["dialog_id"]] = dict()
+        for turn in obj["turns"]:
+            parsed[obj["dialog_id"]][turn["turn_id"]] = turn
+            if turn['make_api_call'] == True:
+                api_call_turns.append(turn["turn_id"])
+        parsed[obj["dialog_id"]]["api_call_turns"] = api_call_turns
+    return parsed
 
-    def parse_json(datafile):
-        '''
-            Create a 2-level dictionary to access preprocessed data
-            key1 = dialog_id ; key2 = turn_id 
-        '''
-        json_object = json.load(open(datafile))
-        parsed = dict()
-        for obj in json_object:
-            api_call_turns = []
-            parsed[obj["dialog_id"]] = dict()
-            for turn in obj["turns"]:
-                parsed[obj["dialog_id"]][turn["turn_id"]] = turn
-                if turn['make_api_call'] == True:
-                    api_call_turns.append(turn["turn_id"])
-            parsed[obj["dialog_id"]]["api_call_turns"] = api_call_turns
-
-        return parsed
-
+def load_rl_data(data_dir, task_id):
+    ''' 
+        Load Train, Validation RL Preprocessed Data
+    '''
     assert task_id > 0 and task_id < 9
     rL_folder = data_dir + "task{}".format(task_id)
     files = os.listdir(rL_folder)
@@ -224,12 +224,29 @@ def load_RL_data(data_dir, task_id):
     train_data = parse_json(train_file)
     test_data = parse_json(test_file)
     val_data = parse_json(val_file)
-    if task_id < 6:
+    return train_data, val_data
+
+def load_rl_test_data(data_dir, task_id, oov=False):
+    ''' 
+        Load Test RL Preprocessed Data
+    '''
+    assert task_id > 0 and task_id < 9
+    rL_folder = data_dir + "task{}".format(task_id)
+    files = os.listdir(rL_folder)
+    files = [os.path.join(rL_folder, f) for f in files]
+    if task_id < 6 and oov:
         oov_file = [f for f in files if 'tst-OOV' in f][0]
-        oov_data = parse_json(oov_file)
+        test_data = parse_json(oov_file)
     else:
-        oov_data = None
-    return train_data, test_data, val_data, oov_data
+        test_file = [f for f in files if 'tst' in f and 'OOV' not in f][0]
+        test_data = parse_json(test_file)
+    return test_data
+
+def get_api_turns(data):
+    turns = {}
+    for dialog in data:
+        turns[dialog] = data[dialog]["api_call_turns"]
+    return turns
 
 def get_rl_vocab(db_engine):
     '''
@@ -311,7 +328,7 @@ def get_rl_vocab(db_engine):
 #########                           Evaluation Metrics & Helpers                         ##########
 ###################################################################################################
 
-def create_batches(data, batch_size, RLdata=None):
+def create_split_batches(data, batch_size, RLdata=None):
     '''
         Helps to partition the dialog into three groups
         1) Dialogs occuring before an API call
@@ -347,6 +364,23 @@ def create_batches(data, batch_size, RLdata=None):
         else:                   api_set.add(i); post_set.add(i) 
    
     return chunk(pre_set, batch_size, 0), chunk(api_set, batch_size, 1), chunk(post_set, batch_size, 2)
+
+def create_batches(data, batch_size):
+    '''
+        Helps to partition the dialog into three groups
+        1) Dialogs occuring before an API call
+        2) Dialogs that have an API call
+        3) Dialogs that occur after and API call
+    '''
+
+    output = []; lst = []
+    for i, index in enumerate(range(len(data.stories))):
+        lst.append(index)
+        if (i+1) % batch_size == 0: 
+            output.append(lst); lst = []
+    if len(lst) > 1:
+        output.append(lst)
+    return output
 
 def pad_to_answer_size(pred, size, action=False):
 

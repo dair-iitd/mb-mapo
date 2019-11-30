@@ -4,7 +4,7 @@ import sys
 #import pprint
 from itertools import chain
 
-## Special Indecies
+## Special indices
 PAD_INDEX = 0
 UNK_INDEX = 1
 GO_SYMBOL_INDEX = 2
@@ -12,7 +12,7 @@ EOS_INDEX = 3
 
 class Data(object):
 
-    def __init__(self, data, args, glob, rldata):
+    def __init__(self, data, args, glob, rldata, api_turns=None):
         self._db_vocab_id = glob['word_idx'].get('$db', -1)
         self._decode_vocab_size = len(glob['decode_idx'])
         self._rl = args.rl
@@ -22,7 +22,7 @@ class Data(object):
         self._extract_data_items(data, args.rl)
         
         ## Process Stories
-        self._vectorize_stories(self._stories_ext, self._queries_ext, args, glob, self._dialog_ids)
+        self._vectorize_stories(self._stories_ext, self._queries_ext, args, glob, self._dialog_ids, api_turns)
 
         ## Process Queries
         self._vectorize_queries(self._queries_ext, glob)
@@ -37,7 +37,7 @@ class Data(object):
         self._intersection_set_mask(self._answers, self._entity_ids, glob)
         
         ## Get entities at response level
-        self.get_entity_indecies(self._read_answers, self._entity_set)
+        self.get_entity_indices(self._read_answers, self._entity_set)
 
     ## Dialogs ##
     @property
@@ -55,6 +55,10 @@ class Data(object):
     @property
     def rldata(self):
         return self._rldata
+
+    @property
+    def make_api(self):
+        return self._make_api
 
     ## Sizes ##
     @property
@@ -172,7 +176,7 @@ class Data(object):
         else: data.sort(key=lambda x: len(x[0]), reverse=True)    # Sort based on dialog size
         self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids, self._turn_ids, self._db = zip(*data)
 
-    def _vectorize_stories(self, stories, queries, args, glob, ids):     
+    def _vectorize_stories(self, stories, queries, args, glob, ids, api_turns):     
         '''
             Maps each story into word and character tokens and assigns them ids
         '''   
@@ -187,6 +191,7 @@ class Data(object):
         self._rl_oov_sizes = []         # The size of OOV words set in RL-Decoder
         self._rl_oov_words = []         # The OOV words in the Stories for RL vocab
         self._responses = []
+        self._make_api = []
 
         for i, (story, query) in enumerate(zip(stories, queries)):
             story_sentences = []    # Encoded Sentences of Single Story
@@ -196,10 +201,17 @@ class Data(object):
             oov_words = []          # The OOV words in a Single Story
             rl_oov_ids = []         # The ids of words in RL_OOV index for copy
             rl_oov_words = []       # The OOV words in a Single Story for RL
+            story_api_calls = []
 
+            dialog_id = ids[i]
+            ## TODO: verify this turn same as api_turn turn
             turn = int(len(story) / 2) + 1
             story.append(query + ['$u', '#{}'.format(turn)])
             self._responses.append([])
+            make_api = 0
+            if args.rl and api_turns:
+                if turn in api_turns[dialog_id]:
+                    make_api = 1
             for sentence in story:
                 sentence=sentence[:glob['sentence_size']]
                 pad = max(0, glob['sentence_size'] - len(sentence))
@@ -241,7 +253,8 @@ class Data(object):
                 sentence_sizes = sentence_sizes[::-1][:args.memory_size][::-1]
                 story_string = story_string[::-1][:args.memory_size][::-1]
                 oov_ids = oov_ids[::-1][:args.memory_size][::-1]
-                if args.rl: rl_oov_ids = rl_oov_ids[::-1][:args.memory_size][::-1]
+                if args.rl: 
+                    rl_oov_ids = rl_oov_ids[::-1][:args.memory_size][::-1]
             else: # pad to memory_size
                 mem_pad = max(0, args.memory_size - len(story_sentences))
                 for _ in range(mem_pad):
@@ -249,7 +262,9 @@ class Data(object):
                     sentence_sizes.append(0)
                     story_string.append([''] * glob['sentence_size'])
                     oov_ids.append([0] * glob['sentence_size'])
-                    if args.rl: rl_oov_ids.append([0] * glob['sentence_size'])
+                    if args.rl: 
+                        rl_oov_ids.append([0] * glob['sentence_size'])
+
 
             self._stories.append(np.array(story_sentences))
             self._story_lengths.append(len(story))
@@ -262,6 +277,7 @@ class Data(object):
                 self._rl_oov_ids.append(np.array(rl_oov_ids))
                 self._rl_oov_sizes.append(np.array(len(rl_oov_words)))
                 self._rl_oov_words.append(rl_oov_words)
+                self._make_api.append(make_api)
 
     def _vectorize_queries(self, queries, glob):
         '''
@@ -334,15 +350,15 @@ class Data(object):
             dialog_mask = [0.0 if (x in vocab or x not in glob['idx_decode']) else 1.0 for x in answer]
             self._intersection_set.append(np.array(dialog_mask))
 
-    def get_entity_indecies(self, read_answers, entity_set):
+    def get_entity_indices(self, read_answers, entity_set):
         '''
-            Get list of entity indecies in each Dialog Response
+            Get list of entity indices in each Dialog Response
         '''
         self._entities = [np.array([i for i, word in enumerate(ans.split()) if word in entity_set ]) for ans in read_answers]
 
 class Batch(Data):
 
-    def __init__(self, data, indecies, args, glob, results=None, train=False, repeatCopyMode=False, batchToCopy=None, indexToCopy=None, noOfCopies=None):
+    def __init__(self, data, indices, args, glob, results=None, train=False, repeatCopyMode=False, batchToCopy=None, indexToCopy=None, noOfCopies=None):
         
         self._rl = args.rl
         self._response_buffer_size = 150
@@ -354,6 +370,7 @@ class Batch(Data):
             self._queries = self._repeat_copy(batchToCopy.queries, indexToCopy, noOfCopies)
             self._answers = self._repeat_copy(batchToCopy.answers, indexToCopy, noOfCopies)
             self._rldata = data.rldata
+
 
             ## Sizes ##
             self._story_lengths = self._repeat_copy(batchToCopy.story_lengths, indexToCopy, noOfCopies)
@@ -376,6 +393,7 @@ class Batch(Data):
                 self._rl_oov_ids   = self._repeat_copy(batchToCopy.rl_oov_ids, indexToCopy, noOfCopies)
                 self._rl_oov_sizes = self._repeat_copy(batchToCopy.rl_oov_sizes, indexToCopy, noOfCopies)
                 self._rl_oov_words = self._repeat_copy(batchToCopy.rl_oov_words, indexToCopy, noOfCopies)
+                self._make_api     = self._repeat_copy(batchToCopy.make_api, indexToCopy, noOfCopies)
 
             ## Dialog Info ##
             self._dialog_ids  = self._repeat_copy(batchToCopy.dialog_ids, indexToCopy, noOfCopies)
@@ -396,43 +414,44 @@ class Batch(Data):
         else:
             
             ## Dialogs ##
-            self._stories = [data.stories[idx] for idx in indecies]
-            self._queries = [data.queries[idx] for idx in indecies]
-            self._answers = [data.answers[idx] for idx in indecies]
+            self._stories = [data.stories[idx] for idx in indices]
+            self._queries = [data.queries[idx] for idx in indices]
+            self._answers = [data.answers[idx] for idx in indices]
             self._rldata = data.rldata
 
             ## Sizes ##
-            self._story_lengths = [data.story_lengths[idx] for idx in indecies]
-            self._story_sizes   = [data.story_sizes[idx] for idx in indecies]
-            self._query_sizes   = [data.query_sizes[idx] for idx in indecies]
-            self._answer_sizes  = [data.answer_sizes[idx] for idx in indecies]
+            self._story_lengths = [data.story_lengths[idx] for idx in indices]
+            self._story_sizes   = [data.story_sizes[idx] for idx in indices]
+            self._query_sizes   = [data.query_sizes[idx] for idx in indices]
+            self._answer_sizes  = [data.answer_sizes[idx] for idx in indices]
 
             ## Read Dialogs ##
-            self._read_stories = [data.readable_stories[idx] for idx in indecies]
-            self._read_queries = [data.readable_queries[idx] for idx in indecies]
-            self._read_answers = [data.readable_answers[idx] for idx in indecies]
+            self._read_stories = [data.readable_stories[idx] for idx in indices]
+            self._read_queries = [data.readable_queries[idx] for idx in indices]
+            self._read_answers = [data.readable_answers[idx] for idx in indices]
 
             ## OOV ##
-            self._oov_ids   = [data.oov_ids[idx] for idx in indecies]
-            self._oov_sizes = [data.oov_sizes[idx] for idx in indecies]
-            self._oov_words = [data.oov_words[idx] for idx in indecies]
+            self._oov_ids   = [data.oov_ids[idx] for idx in indices]
+            self._oov_sizes = [data.oov_sizes[idx] for idx in indices]
+            self._oov_words = [data.oov_words[idx] for idx in indices]
 
             ## RL OOV ##
             if args.rl: 
-                self._rl_oov_ids   = [data.rl_oov_ids[idx] for idx in indecies]
-                self._rl_oov_sizes = [data.rl_oov_sizes[idx] for idx in indecies]
-                self._rl_oov_words = [data.rl_oov_words[idx] for idx in indecies]
+                self._rl_oov_ids   = [data.rl_oov_ids[idx] for idx in indices]
+                self._rl_oov_sizes = [data.rl_oov_sizes[idx] for idx in indices]
+                self._rl_oov_words = [data.rl_oov_words[idx] for idx in indices]
+                self._make_api     = [data.make_api[idx] for idx in indices]
 
             ## Dialog Info ##
-            self._dialog_ids  = [data.dialog_ids[idx] for idx in indecies]
-            self._turn_ids    = [data.turn_ids[idx] for idx in indecies]
+            self._dialog_ids  = [data.dialog_ids[idx] for idx in indices]
+            self._turn_ids    = [data.turn_ids[idx] for idx in indices]
             self._db_vocab_id = data.db_vocab_id
 
             ## Decode Variables ##
-            self._answers_emb_lookup = [data.answers_emb_lookup[idx] for idx in indecies]
+            self._answers_emb_lookup = [data.answers_emb_lookup[idx] for idx in indices]
 
             if results:
-                # self._append_results(args, glob, list(itemgetter(*indecies)(results)))
+                # self._append_results(args, glob, list(itemgetter(*indices)(results)))
                 self._append_results(args, glob, results)
             else:
                 self._append_results(args, glob) 
@@ -444,11 +463,11 @@ class Batch(Data):
             self._encoder_entity_ids = data.encoder_entity_ids
 
             if args.rl:
-                self.get_entity_indecies(self._read_answers, self._entity_set)
+                self.get_entity_indices(self._read_answers, self._entity_set)
             else:
-                self._entities = [data.entities[idx] for idx in indecies]
+                self._entities = [data.entities[idx] for idx in indices]
 
-            self._intersection_set = [data.intersection_set[idx] for idx in indecies]
+            self._intersection_set = [data.intersection_set[idx] for idx in indices]
 
             if args.word_drop and train:
                 self._stories = self._all_db_to_unk(self._stories, data.db_vocab_id, args.word_drop_prob)
@@ -481,10 +500,14 @@ class Batch(Data):
             #print("")
             #print(len(self._stories), len(self._dialog_ids), i)
             #pprint.pprint(self._rldata[self._dialog_ids[i]])
-            api_call_turns = self._rldata[self._dialog_ids[i]]["api_call_turns"]
-            api_call_turn_id = -1
-            if len(api_call_turns) > 0:
-                api_call_turn_id = api_call_turns[0]
+            try:
+                api_call_turns = self._rldata[self._dialog_ids[i]]["api_call_turns"]
+                api_call_turn_id = -1
+                if len(api_call_turns) > 0:
+                    api_call_turn_id = api_call_turns[0]
+            except Exception as e:
+                api_call_turn_id = -1
+
             position_to_insert = -1
             if "#"+str(api_call_turn_id) in self._oov_words[i]:
                 position_to_insert = self._oov_words[i].index("#"+str(api_call_turn_id))
