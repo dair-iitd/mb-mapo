@@ -398,9 +398,10 @@ class chatBot(object):
 			if len(indices) == 0:
 				continue
 			batch_entry = Batch(data, indices, args, glob, None, train=True)
-			loss_t, logits, gold = self.model.fit_api_call(batch_entry)
+			loss_t, logits, gold, bag_of_words = self.model.fit_api_call(batch_entry)
 			total_loss += loss_t
 			pbar.set_description('TL:{:.2f}'.format(total_loss/(i+1)))
+			# print(bag_of_words)
 		print('\nTotal L:{:.2f}'.format(total_loss))
 		return total_loss
 

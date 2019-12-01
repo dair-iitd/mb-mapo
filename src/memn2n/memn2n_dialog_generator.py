@@ -116,11 +116,12 @@ class MemN2NGeneratorDialog(object):
 		if self._rl:
 			### API Turn prediction
 			## Predicting ##
-			self.api_predict_op = self._decoder_predict_api(encoder_states, line_memory, word_memory)
+			bag_of_words = self._one_hot_encoder(self._stories, self._queries)
+			self.api_predict_op = self._decoder_predict_api(bag_of_words)
 
 			## Training ##
-			self.api_loss_op = self._decoder_train_api(encoder_states, line_memory, word_memory)
-			loss, logits, gold = self.api_loss_op
+			self.api_loss_op = self._decoder_train_api(bag_of_words)
+			loss, logits, gold, _ = self.api_loss_op
 
 			# Gradient Pipeline
 			api_grads_and_vars = self._opt.compute_gradients(loss)
@@ -305,6 +306,10 @@ class MemN2NGeneratorDialog(object):
 				u.append(u_k)
 			
 			return u_k, line_memory, word_memory
+
+
+	def _one_hot_encoder(self, stories, queries):
+		return tf.clip_by_value(tf.reduce_sum(tf.one_hot(tf.reshape(stories, [-1, 1]), self._vocab_size), 0), 0, 1)
 
 	###################################################################################################
 	#########                                  	 Decoders                                    ##########
@@ -492,7 +497,7 @@ class MemN2NGeneratorDialog(object):
 	def linear(self, args, output_size, bias, bias_start=0.0, scope=None):
 		# Now the computation.
 		with tf.variable_scope(scope or "Linear"):
-			matrix = tf.get_variable("Matrix", [self._embedding_size, output_size])
+			matrix = tf.get_variable("Matrix", [self._vocab_size, output_size])
 			res = tf.matmul(args[0], matrix)
 			if not bias:
 				return res
@@ -500,7 +505,7 @@ class MemN2NGeneratorDialog(object):
 				"Bias", [output_size], initializer=tf.constant_initializer(bias_start))
 		return res + bias_term 
 
-	def _decoder_train_api(self, encoder_states, line_memory, word_memory=None):
+	def _decoder_train_api(self, bag_of_words):
 		'''
 			Arguments:
 				encoder_states 	-	batch_size x embedding_size
@@ -512,15 +517,15 @@ class MemN2NGeneratorDialog(object):
 		with tf.variable_scope(self._name):
 			with tf.variable_scope('api_classifier', reuse=True):
 				## Get logits
-				logits = tf.sigmoid(self.linear([encoder_states], 1, True))
+				logits = tf.sigmoid(self.linear([bag_of_words], 1, True))
 
 				## Calculate Loss
 				y_pred = tf.clip_by_value(logits,1e-20,1.0)
-				loss = -tf.reduce_sum(self._make_api * tf.log(y_pred) + (1 - self._make_api) * tf.log(1 - y_pred))
+				loss = -tf.reduce_sum(10 * self._make_api * tf.log(y_pred) + (1 - self._make_api) * tf.log(1 - y_pred))
 
-				return loss, logits, self._make_api
+				return loss, logits, self._make_api, bag_of_words
 
-	def _decoder_predict_api(self, encoder_states, line_memory, word_memory=None):
+	def _decoder_predict_api(self, bag_of_words):
 		'''
 			Arguments:
 				encoder_states 	-	batch_size x embedding_size
@@ -532,7 +537,7 @@ class MemN2NGeneratorDialog(object):
 		with tf.variable_scope(self._name):
 			with tf.variable_scope('api_classifier'):
 				## Linear Layer
-				predictions = tf.argmax(tf.sigmoid(self.linear([encoder_states], 1, True)))
+				predictions = tf.argmax(tf.sigmoid(self.linear([bag_of_words], 1, True)))
 				return predictions
 
 	###################################################################################################
