@@ -9,14 +9,18 @@ flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
 flags.DEFINE_integer("epochs", 600, "Number of epochs to train for.")
 
 # Model Params
-flags.DEFINE_float("learning_rate", 0.025, "Learning rate for Adam Optimizer.")
-flags.DEFINE_integer("batch_size", 16, "Batch size for training.")
-flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-flags.DEFINE_integer("embedding_size", 64, "Embedding size for embedding matrices.")
+flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
+flags.DEFINE_integer("batch_size", 64, "Batch size for training.")
+flags.DEFINE_integer("hops", 6, "Number of hops in the Memory Network.")
+flags.DEFINE_integer("embedding_size", 256, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
 flags.DEFINE_integer("beam_width", 6, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 1, "Start Phase for RL training")
-flags.DEFINE_integer("model_index", 1, "integer id when multiple runs are launched for the same param settings")
+flags.DEFINE_integer("model_index", 8, "integer id when multiple runs are launched for the same param settings")
+
+# Classification Params
+flags.DEFINE_float("cl_learning_rate", 0.0001, "Learning rate for Adam Optimizer.")
+flags.DEFINE_integer("cl_hops", 3, "Number of hops in the Memory Network.")
 
 # Entity Word Drop
 flags.DEFINE_float("word_drop_prob", 0.1, "value to set, if word_drop is set to True")
@@ -41,7 +45,6 @@ flags.DEFINE_integer("max_api_length", 4, "Set the value based on DBEngine and Q
 flags.DEFINE_boolean("split_emb", True, "Use separate embedding for RL encoder")
 flags.DEFINE_integer("rl_warmp_up", 40, "Set the number of epochs for which RL should run before SL")
 flags.DEFINE_boolean("filtering", False, "Filter valid queries during inference")
-
 
 # Output and Evaluation Specifications
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")

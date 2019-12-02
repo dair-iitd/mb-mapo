@@ -174,7 +174,7 @@ def parse_dialogs(file, rl, sort):
                         trap_next = True
                         trap_u = u[:]
                     continue
-                data.append((context[:]+u[:], u[:], r[:], dialog_id, turn_id, database))
+                data.append((context[:], u[:], r[:], dialog_id, turn_id, database))
                 u.extend(['$u', '#{}'.format(turn_id)])
                 r.extend(['$r', '#{}'.format(turn_id)])
                 context.append(u); context.append(r)

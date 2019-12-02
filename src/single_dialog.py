@@ -15,12 +15,14 @@ from db_engine import DbEngine, QueryGenerator
 from evaluation import evaluate
 from itertools import chain
 from memn2n.memn2n_dialog_generator import MemN2NGeneratorDialog
+from memn2n.api_classifier import APIClassifier
 from operator import itemgetter
 from params import get_params, print_params
 from reward import calculate_reward
 from six.moves import range, reduce
 from sklearn import metrics
 from tqdm import tqdm
+from sklearn.metrics import f1_score
 
 args = get_params()
 glob = {}
@@ -38,9 +40,16 @@ class chatBot(object):
 						+ "_pw-" + str(args.p_gen_loss_weight) 
 						+ "_rlmode-" + str(args.rl_mode)
 						+ "_idx-" + str(args.model_index))
+		self.run_id_cl = ("task" + str(args.task_id) + "_" + args.data_dir.split('/')[-2] 
+						+ "_lr-" + str(args.cl_learning_rate) 
+						+ "_hops-" + str(args.cl_hops))
 		self.model_dir = (args.model_dir +  self.run_id + "_model/")
 		if not os.path.exists(self.model_dir):
 			os.makedirs(self.model_dir)
+
+		self.model_dir_class = (args.model_dir +  self.run_id_cl + "_classifier_model/")
+		if not os.path.exists(self.model_dir_class):
+			os.makedirs(self.model_dir_class)
 			
 		''' Three Vocabularies
 		1) Decoder Vocab [decode_idx, idx_decode] 	# Used to Encode Response by Response-Decoder
@@ -77,6 +86,10 @@ class chatBot(object):
 		glob['session'] = tf.Session(config=tf.ConfigProto(log_device_placement=False,allow_soft_placement=True))
 		self.model = MemN2NGeneratorDialog(args, glob)
 		self.saver = tf.train.Saver(max_to_keep=4)
+		if args.rl:
+			glob['classifier_optimizer'] = tf.train.AdamOptimizer(learning_rate=args.cl_learning_rate, epsilon=args.epsilon)
+			glob['classifier_session'] = tf.Session(config=tf.ConfigProto(log_device_placement=False,allow_soft_placement=True))
+			self.classifier = APIClassifier(args, glob)
 
 	def build_vocab(self, data):
 		'''
@@ -113,14 +126,36 @@ class chatBot(object):
 		# print("Validation Size", n_val)
 
 		if args.rl:			
-			## Train api call module and create preprocessed test and testOOV rl data
-			batches_train = create_batches(Data_train, args.batch_size)
-			for epoch in range(1, args.epochs + 1):
-				print('Epoch', epoch)
-				loss = self.batch_train_api_call(Data_train, batches_train)
-				##TODO: Add early stop on loss
-				if loss == 0.0:
-					break
+			if args.save:
+				ckpt = tf.train.get_checkpoint_state(self.model_dir_class)
+				if ckpt and ckpt.model_checkpoint_path:
+					self.saver.restore(glob['classifier_session'], ckpt.model_checkpoint_path)
+				else:
+					print("...no classifier_session checkpoint found...")
+					sys.exit()
+			else:
+				## Load trained RL model
+				ckpt = tf.train.get_checkpoint_state(self.model_dir)
+				if ckpt and ckpt.model_checkpoint_path:
+					self.saver.restore(glob['session'], ckpt.model_checkpoint_path)
+				else:
+					print("...no session checkpoint found...")
+					# sys.exit()
+
+				## Copy embedding matrices to Classifier
+				self.classifier.set_vars(self.model.A, self.model.H, self.model.encoder_fwd, self.model.encoder_bwd)
+
+				## Train api call module and create preprocessed test and testOOV rl data
+				batches_train = create_batches(Data_train, args.batch_size)
+				best_acc = 0.0
+				for epoch in range(1, args.epochs + 1):
+					print('Epoch', epoch)
+					loss, acc = self.batch_train_api_call(Data_train, batches_train)
+					##TODO: Add early stop on loss
+					if acc > best_acc:
+						best_acc = acc
+						self.saver.save(glob['classifier_session'], self.model_dir_class + 'model.ckpt', global_step=epoch)
+						print('MODEL SAVED')
 
 			## Use model to predict test api positions
 			Data_test = Data(self.testData, args, glob, None)
@@ -166,6 +201,7 @@ class chatBot(object):
 				self.saver.restore(glob['session'], ckpt.model_checkpoint_path)
 			else:
 				print("...no checkpoint found...")
+				sys.exit()
 			#print('*Predict Validation*'); 
 			sys.stdout.flush()
 			val_accuracies = self.batch_predict(Data_val, batches_val, self.RLvalData)
@@ -392,18 +428,26 @@ class chatBot(object):
 		np.random.shuffle(batches)
 		total_loss = 0.0	# Total Loss
 		
+		gold = []
+		predictions = []
 		pbar = tqdm(enumerate(batches),total=len(train_batches))
 		for i, indices in pbar:
 		# for i, indices in enumerate(batches):
 			if len(indices) == 0:
 				continue
 			batch_entry = Batch(data, indices, args, glob, None, train=True)
-			loss_t, logits, gold, bag_of_words = self.model.fit_api_call(batch_entry)
+			loss_t, logits, gold_t, predictions_t = self.classifier.fit_api_call(batch_entry)
 			total_loss += loss_t
 			pbar.set_description('TL:{:.2f}'.format(total_loss/(i+1)))
-			# print(bag_of_words)
-		print('\nTotal L:{:.2f}'.format(total_loss))
-		return total_loss
+			# print('logits', logits)
+			# print('g', gold_t)
+			# print('p', predictions_t)
+			gold.extend(gold_t)
+			predictions.extend(predictions_t)
+		acc = f1_score(predictions, gold)
+		print('Total L:{:.2f}'.format(total_loss))
+		print('f1 score : {}\n'.format(acc))
+		return total_loss, acc
 
 	def batch_predict(self, data, batches, rl_data, output=False, epoch_str=""):
 		'''
@@ -482,7 +526,7 @@ class chatBot(object):
 			# Get predictions
 			print('indices', indices)
 			batch_entry = Batch(data, indices, args, glob, None)
-			preds_t = self.model.predict_api_call(batch_entry)
+			preds_t = self.classifier.predict_api_call(batch_entry)
 			preds += preds_t
 		return preds
 	

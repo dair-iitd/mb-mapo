@@ -114,22 +114,6 @@ class MemN2NGeneratorDialog(object):
 		self.train_op = self._opt.apply_gradients(nil_grads_and_vars, name="train_op")
 
 		if self._rl:
-			### API Turn prediction
-			## Predicting ##
-			bag_of_words = self._one_hot_encoder(self._stories, self._queries)
-			self.api_predict_op = self._decoder_predict_api(bag_of_words)
-
-			## Training ##
-			self.api_loss_op = self._decoder_train_api(bag_of_words)
-			loss, logits, gold, _ = self.api_loss_op
-
-			# Gradient Pipeline
-			api_grads_and_vars = self._opt.compute_gradients(loss)
-			api_grads_and_vars = [(tf.clip_by_norm(g, self._max_grad_norm), v) for g, v in api_grads_and_vars if g != None]
-			api_nil_grads_and_vars = [(zero_nil_slot(g), v) if v.name in self._nil_vars else (g, v) for g, v, in api_grads_and_vars]
-			self.api_train_op = self._opt.apply_gradients(api_nil_grads_and_vars, name="api_train_op")
-
-			### Dialog prediction
 			## Predicting ##
 			self.rl_predict_op = self._decoder_predict_rl(encoder_states_rl, line_memory, word_memory)
 
@@ -157,7 +141,7 @@ class MemN2NGeneratorDialog(object):
 		self._stories = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="stories")
 		self._queries = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries")
 		self._answers = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers")
-
+		
 		## Sizes ##
 		self._sentence_sizes = tf.placeholder(tf.int32, [None, None], name="sentence_sizes")
 		self._query_sizes = tf.placeholder(tf.int32, [None, 1], name="query_sizes")
@@ -177,9 +161,6 @@ class MemN2NGeneratorDialog(object):
 
 		## RL ##
 		if self._rl:
-			## API Turn Prediction ##
-			self._make_api = tf.placeholder(tf.float32, [None], name="make_api")
-			
 			self._rl_actions = tf.placeholder(tf.int32, [None, self._max_api_length], name="actions")
 			self._rl_actions_emb_lookup = tf.placeholder(tf.int32, [None, self._max_api_length], name="actions_emb")
 			self._rl_action_sizes = tf.placeholder(tf.int32, [None, 1], name="action_sizes")
@@ -306,10 +287,6 @@ class MemN2NGeneratorDialog(object):
 				u.append(u_k)
 			
 			return u_k, line_memory, word_memory
-
-
-	def _one_hot_encoder(self, stories, queries):
-		return tf.clip_by_value(tf.reduce_sum(tf.one_hot(tf.reshape(stories, [-1, 1]), self._vocab_size), 0), 0, 1)
 
 	###################################################################################################
 	#########                                  	 Decoders                                    ##########
@@ -492,56 +469,7 @@ class MemN2NGeneratorDialog(object):
 					return tf.argmax(outputs.rnn_output, axis=-1)
 
 	###################################################################################################
-	#########                                API-Classifier                                  ##########
-	###################################################################################################
-	def linear(self, args, output_size, bias, bias_start=0.0, scope=None):
-		# Now the computation.
-		with tf.variable_scope(scope or "Linear"):
-			matrix = tf.get_variable("Matrix", [self._vocab_size, output_size])
-			res = tf.matmul(args[0], matrix)
-			if not bias:
-				return res
-			bias_term = tf.get_variable(
-				"Bias", [output_size], initializer=tf.constant_initializer(bias_start))
-		return res + bias_term 
-
-	def _decoder_train_api(self, bag_of_words):
-		'''
-			Arguments:
-				encoder_states 	-	batch_size x embedding_size
-				line_memory 	-	batch_size x memory_size x embedding_size
-				word_memory 	- 	batch_size x memory_size x sentence_size x embedding_size
-			Outputs:
-				loss 	- 	Total Loss (Sequence Loss + PGen Loss) (Float)
-		'''
-		with tf.variable_scope(self._name):
-			with tf.variable_scope('api_classifier', reuse=True):
-				## Get logits
-				logits = tf.sigmoid(self.linear([bag_of_words], 1, True))
-
-				## Calculate Loss
-				y_pred = tf.clip_by_value(logits,1e-20,1.0)
-				loss = -tf.reduce_sum(10 * self._make_api * tf.log(y_pred) + (1 - self._make_api) * tf.log(1 - y_pred))
-
-				return loss, logits, self._make_api, bag_of_words
-
-	def _decoder_predict_api(self, bag_of_words):
-		'''
-			Arguments:
-				encoder_states 	-	batch_size x embedding_size
-				line_memory 	-	batch_size x memory_size x embedding_size
-				word_memory 	- 	batch_size x memory_size x sentence_size x embedding_size
-			Outputs:
-
-		'''
-		with tf.variable_scope(self._name):
-			with tf.variable_scope('api_classifier'):
-				## Linear Layer
-				predictions = tf.argmax(tf.sigmoid(self.linear([bag_of_words], 1, True)))
-				return predictions
-
-	###################################################################################################
-	#########                                  RL-Decoder                                    ##########
+	#########                                  	RL-Decoder                                   ##########
 	###################################################################################################
 	def _decoder_predict_rl(self, encoder_states, line_memory, word_memory=None):
 		'''
@@ -734,7 +662,7 @@ class MemN2NGeneratorDialog(object):
 				self._check_shape('rl_rewards: ', feed_dict[self._rl_rewards])
 				self._check_shape('rl_action_sizes: ', feed_dict[self._rl_action_sizes])
 
-	def _make_feed_dict(self, batch, actions_and_rewards=None, train=True, api=False):
+	def _make_feed_dict(self, batch, actions_and_rewards=None, train=True):
 		"""Make a feed dictionary mapping parts of the batch to the appropriate placeholders.
 
 		Args:
@@ -765,9 +693,7 @@ class MemN2NGeneratorDialog(object):
 				if self._fixed_length_decode:
 					feed_dict[self._rl_decode_length_class_ids] = np.array(actions_and_rewards.rl_decode_length_class_ids)
 		else:
-			feed_dict[self._keep_prob] = 1.0
-		if api:
-			feed_dict[self._make_api] = np.array(batch.make_api)
+			feed_dict[self._keep_prob] = 1.0	
 		if self._debug:
 			self._print_feed(feed_dict, actions_and_rewards, train)
 		return feed_dict
@@ -790,25 +716,6 @@ class MemN2NGeneratorDialog(object):
 		"""
 		feed_dict = self._make_feed_dict(batch, train=False)
 		return self._sess.run(self.predict_op, feed_dict=feed_dict)
-
-	def fit_api_call(self, batch):
-		"""
-			Runs the training algorithm over the passed batch
-		  Returns:
-			loss: floating-point number, the loss computed for the batch
-		"""
-		feed_dict = self._make_feed_dict(batch, api=True)
-		loss, _= self._sess.run([self.api_loss_op, self.api_train_op], feed_dict=feed_dict)
-		return loss
-
-	def predict_api_call(self, batch):
-		"""
-			Predicts answers as one-hot encoding.
-		  Returns:
-			answers: Tensor (None, vocab_size)
-		"""
-		feed_dict = self._make_feed_dict(batch, train=False, api=True)
-		return self._sess.run(self.api_predict_op, feed_dict=feed_dict)
 
 	def api_predict(self, batch):
 		"""
