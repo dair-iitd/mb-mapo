@@ -8,6 +8,7 @@ from collections import defaultdict
 import re
 import sys
 import random
+import db_engine
 
 stop_words=set(["a","an","the"])
 PAD_INDEX = 0
@@ -65,32 +66,128 @@ def accuracy(preds, golds, dialog_ids):
 
 	return response_accuracy, dialog_accuracy 
 
-def f1(preds, golds, entities, word_map):
-	re = []
-	pr = []
+def compute_macro_f1(pr_list, re_list):
 
+	#average of F1s
+	#arithmetic mean over harmonic mean
+	total_f1 = 0
+	total_pr = 0
+	total_re = 0
+	for pr, re in zip(pr_list, re_list):
+		if pr+re > 0:
+			f1=(2*pr*re)/(pr+re)
+			total_f1 += f1
+		total_pr += pr
+		total_re += re
+
+	return total_pr/float(len(pr_list)), total_re/float(len(pr_list)), total_f1/float(len(pr_list))
+		
+def f1(preds, golds, stories, entities, dids, answers, ordered_oovs, word_map, encoder_word_map, db_engine):
+	
 	punc = ['.', ',', '!', '\'', '\"', '-', '?']
 
-	for i, (pred, gold) in enumerate(zip(preds, golds)):
-		re_temp = []
-		pr_temp = []
-		lst = []
-		for j, ref_word in enumerate(gold):
-			if j in entities[i]:
-				if ref_word in word_map and word_map[ref_word] in punc:
-					continue 
-				lst.append(ref_word)
-				re_temp.append(1)
-				pr_temp.append(0)
-		for pred_word in pred:
-			if pred_word in lst:
-				index = lst.index(pred_word)
-				pr_temp[index] = 1
+	'''
+	punc = ['.', ',', '!', '\'', '\"', '-', '?']
+	for entity_idxs, gold in zip(entities, golds):
+		processed_gold = [x for x in gold if x != EOS_INDEX and x != PAD_INDEX]
+		print("gold", gold)
+		print("processed_gold", processed_gold)
+		print("entity_idxs", entity_idxs)
+		for e in entity_idxs:
+			if e < len(processed_gold):
+				e_surface_form = word_map[processed_gold[e]]
+				if e_surface_form not in punc:
+					print("\t", e_surface_form)
+		print("----------------------")
+	'''
 
-		re += re_temp
-		pr += pr_temp
+	pr_list = []
+	re_list = []
 
-	return "{:.2f}".format(100*f1_score(re, pr, average='micro'))
+	pr_infor_list = []
+	re_infor_list = []
+
+	pr_req_list = []
+	re_req_list = []
+
+
+	for i, (pred, gold, entity, did, answer, story) in enumerate(zip(preds, golds, entities, dids, answers, stories)):
+
+		entities_in_pred = set([])
+		entities_in_gold = set([])
+
+		informable_entities_in_pred = set([])
+		informable_entities_in_gold = set([])
+
+		'''
+		print("did", did)
+		print("gold", gold, get_tokenized_response_from_padded_vector(gold, word_map, ordered_oovs[did]))
+		print("pred", pred, get_tokenized_response_from_padded_vector(pred, word_map, ordered_oovs[did]))
+		print("entity", entity)
+		for e in entity:
+			e_surface =  word_map[gold[e]]
+			if e_surface not in punc:
+				entities_in_gold.add(e_surface)
+				if db_engine.is_informable_field_value(e_surface):
+					informable_entities_in_gold.add(e_surface)
+		'''
+		
+		story_entities = set([])
+		for story_line in story:
+			story_line_str = " ".join(story_line)
+			story_line_str = story_line_str.strip()
+			if story_line_str.strip() != "" and "$db" not in story_line_str:
+				line_entities, _ = db_engine.get_entities_in_utt(story_line_str)
+				for e in line_entities:
+					story_entities.add(e)
+
+		entities_in_gold, _ = db_engine.get_entities_in_utt(answer)
+		story_entities_in_gold = entities_in_gold.intersection(story_entities)
+
+		if len(entities_in_gold) == 0:
+			continue
+
+		entities_in_pred, _ = db_engine.get_entities_in_utt(get_tokenized_response_from_padded_vector(pred, word_map, ordered_oovs[did]))
+		story_entities_in_pred = entities_in_pred.intersection(story_entities)
+
+		common = float(len(entities_in_gold.intersection(entities_in_pred)))
+		re_list.append(common/len(entities_in_gold))
+		if len(entities_in_pred) == 0:
+			pr_list.append(0)
+		else:
+			pr_list.append(common/len(entities_in_pred))
+		
+		if len(story_entities_in_gold) > 0:
+			common = float(len(story_entities_in_gold.intersection(story_entities_in_pred)))
+			if len(story_entities_in_pred) == 0:
+				pr_infor_list.append(0)
+			else:
+				pr_infor_list.append(common/len(story_entities_in_pred))
+			re_infor_list.append(common/len(story_entities_in_gold))
+		#else:
+		#	pr_infor_list.append(0)
+		#	re_infor_list.append(0)
+
+		req_in_gold = entities_in_gold.difference(story_entities_in_gold)
+		if len(req_in_gold) > 0:
+			req_in_pred = entities_in_pred.difference(story_entities_in_pred)
+			common = float(len(req_in_gold.intersection(req_in_pred)))
+			if len(req_in_pred) == 0:
+				pr_req_list.append(0)
+			else:
+				pr_req_list.append(common/len(req_in_pred))
+			re_req_list.append(common/len(req_in_gold))
+		#else:
+		#	pr_req_list.append(0)
+		#	re_req_list.append(0)
+
+	macro_pr, macro_re, macro_f1 = compute_macro_f1(pr_list, re_list)
+
+	macro_infor_pr, macro_infor_re, macro_infor_f1 = compute_macro_f1(pr_infor_list, re_infor_list)
+	
+	macro_req_pr, macro_req_re, macro_req_f1 = compute_macro_f1(pr_req_list, re_req_list)
+
+	return ((macro_pr, macro_re, macro_f1), (macro_infor_pr, macro_infor_re, macro_infor_f1), (macro_req_pr, macro_req_re, macro_req_f1))
 
 def get_tokenized_response_from_padded_vector(vector, word_map, oov):
 	final = []
@@ -101,7 +198,7 @@ def get_tokenized_response_from_padded_vector(vector, word_map, oov):
 		else:				final.append('UNK')
 	return ' '.join(final)
 
-def BLEU(preds, golds, word_map, did, oovs, output=False, run_id="", epoch_str=""):
+def BLEU(preds, golds, word_map, dids, tids, answers, oovs, output=False, run_id="", epoch_str=""):
 	tokenized_preds = []
 	tokenized_golds = []
 	
@@ -110,14 +207,21 @@ def BLEU(preds, golds, word_map, did, oovs, output=False, run_id="", epoch_str="
 		if not os.path.exists(dirName):
 			os.mkdir(dirName)
 		file = open(dirName+'/'+epoch_str+'.log', 'w+')
-	for i, (pred, gold) in enumerate(zip(preds, golds)):
-		pred = get_tokenized_response_from_padded_vector(pred, word_map, oovs[did[i]])
-		gold = get_tokenized_response_from_padded_vector(gold, word_map, oovs[did[i]])
+	for i, (pred, gold, did, tid, answer) in enumerate(zip(preds, golds, dids, tids, answers)):
+		#print(epoch_str, "-------")
+		#print("did", str(did), "tid", str(tid))
+		#print("oovs", oovs[dids[i]])
+		pred = get_tokenized_response_from_padded_vector(pred, word_map, oovs[dids[i]])
+		#print("pred", pred)
+		#gold = get_tokenized_response_from_padded_vector(gold, word_map, oovs[dids[i]])
+		#print("gold", gold)
+		#print("answer", answer)
+
 		tokenized_preds.append(pred)
-		tokenized_golds.append(gold)
+		tokenized_golds.append(answer)
 		if output:
-			file.write('gold : ' + gold + '\n')
-			file.write('pred : ' + pred + '\n\n')
+			file.write('did : ' + str(did) + '\n' + 'tid : ' + str(tid) + '\n' + 'gold : ' + answer + '\n'+'pred : ' + pred + '\n\n')
+			file.flush()
 	if output:
 		file.close()
 			
@@ -147,18 +251,27 @@ def tokenize(vals, dids):
 def merge(ordered, gold_out=True):
 	preds = []
 	golds = []
+	entities = []
 	dids = []
+	tids = []
+	answers = []
+	stories = []
 	for i in range(1, len(ordered)+1):
 		val = ordered[i]
 		for dct in val:
 			preds.append(dct['preds'])
 			golds.append(dct['golds'])
+			entities.append(dct['entity'])
+			tids.append(dct['turn'])
+			answers.append(dct['answer'])
+			stories.append(dct['story'])
 			dids.append(i)
-	return preds, golds, dids
+	return preds, golds, entities, dids, tids, answers, stories
 
-def evaluate(args, glob, preds, golds, entities, dialog_ids, oov_words, out=False, run_id="", epoch_str=""):
+def evaluate(args, glob, preds, golds, stories, entities, dialog_ids, turn_ids, readable_answers, oov_words, db_engine, out=False, run_id="", epoch_str=""):
 	word_map = glob['idx_decode'] 
 	index_map = glob['decode_idx']
+	encode_word_map = glob['idx_word']
 
 	preds, golds = process(preds, golds)
 
@@ -175,23 +288,27 @@ def evaluate(args, glob, preds, golds, entities, dialog_ids, oov_words, out=Fals
 
 	ordered_orig = defaultdict(list)
 
-	orginal = zip(preds, golds)
+	orginal = zip(preds, golds, entities, turn_ids, readable_answers, stories)
 
 	for num, org in zip(dialog_ids, orginal):
-		p, g = org
+		p, g, e, t, a, s = org
 		element_dict = defaultdict(list)
 		element_dict['preds'] = p
 		element_dict['golds'] = g
+		element_dict['entity'] = e
+		element_dict['turn'] = t
+		element_dict['answer'] = a
+		element_dict['story'] = s
 		ordered_orig[num].append(element_dict)
 
-	preds, golds, dids = merge(ordered_orig, True)
+	preds, golds, ordered_entities, dids, tids, answers, ord_stories = merge(ordered_orig, True)
 
 	output = {}
-	output['bleu'] = float(BLEU(preds, golds, word_map, dids, ordered_oovs, output=out, run_id=run_id, epoch_str=epoch_str))
+	output['bleu'] = float(BLEU(preds, golds, word_map, dids, tids, answers, ordered_oovs, output=out, run_id=run_id, epoch_str=epoch_str))
 	acc, dial = accuracy(preds, golds, dids)
 	output['acc'] = float(acc)
 	output['dialog'] = float(dial)
-	output['f1'] = float(f1(preds, golds, entities, word_map))
+	output['f1'] = f1(preds, golds, ord_stories, ordered_entities, dids, answers, ordered_oovs, word_map, encode_word_map, db_engine)
 	if args.bleu_score:
 		output['comp'] = output['bleu'] 
 	else:

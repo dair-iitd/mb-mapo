@@ -53,16 +53,15 @@ class chatBot(object):
 		print("Decoder Vocab Size : {}".format(len(glob['decode_idx'])))
 		print("candidate_sentence_size : {}".format(glob['candidate_sentence_size'])); sys.stdout.flush()
 		# Retreive Task Data
-		self.trainData, self.testData, self.valData, self.testOOVData = load_dialog_task(args.data_dir, args.task_id, args.rl, args.sort)
-
-
+		self.trainData, self.testData, self.valData, self.testOOVData = load_dialog_task(args)
+		
 		# 2) Build RL Vocab for RL-Decoder
 		if args.rl:
 			self.db_engine = DbEngine(args.kb_file, "R_name")
-			self.RLtrainData, self.RLtestData, self.RLvalData, self.RLtestOOVData = load_RL_data(args.data_dir, args.task_id)
+			self.RLtrainData, self.RLtestData, self.RLvalData, self.RLtestOOVData = load_RL_data(args)
 			if args.fixed_length_decode:
 				glob['rl_decode_length_vs_index'], glob['rl_decode_length_lookup_array'] = get_rl_decode_length_vs_index(self.RLtrainData, self.RLvalData)
-			glob['rl_idx'], glob['idx_rl'], glob['fields'], glob['rl_vocab_size'], glob['constraint_mask'], glob['state_mask'] = get_rl_vocab(self.db_engine)
+			glob['rl_idx'], glob['idx_rl'], glob['fields'], glob['rl_vocab_size'], glob['constraint_mask'], glob['state_mask'] = get_rl_vocab(self.db_engine, args.data_dir, args.task_id)
 			print("RL Vocab Size : {}".format(glob['rl_vocab_size'])); sys.stdout.flush()
 		else:
 			self.RLtrainData = self.RLtestData = self.RLvalData = self.RLtestOOVData = None
@@ -114,7 +113,7 @@ class chatBot(object):
 		n_test = len(Data_test.stories)
 		print("Test Size", n_test)
 
-		if args.task_id < 6:
+		if args.oov:
 			Data_test_OOV = Data(self.testOOVData, args, glob, self.RLtestOOVData)
 			n_oov = len(Data_test_OOV.stories)
 			print("Test OOV Size", n_oov)
@@ -128,7 +127,7 @@ class chatBot(object):
 		batches_train = create_batches(Data_train, args.batch_size, self.RLtrainData)
 		batches_val = create_batches(Data_val, args.batch_size, self.RLvalData)
 		batches_test = create_batches(Data_test, args.batch_size, self.RLtestData)
-		if args.task_id < 6:
+		if args.oov:
 			batches_oov = create_batches(Data_test_OOV, args.batch_size, self.RLtestOOVData)
 
 		# Look for previously saved checkpoint
@@ -154,61 +153,55 @@ class chatBot(object):
 			print('************************')
 			print('\nEpoch {}'.format(epoch), 'Phase {}'.format(self.model.phase)); sys.stdout.flush()
 				
-			if args.rl and self.model.phase >= 1:
+			if epoch <= args.rl_warmp_up:
 				total_reward, perfect_query_ratio, valid_query_ratio, _ = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData)
 
 				total_rewards, perfect_query_ratio, valid_query_ratio, train_db_results_map = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData, train=False, output=True, epoch_str=str(epoch)+"-trn")
 				print("\nTrain Rewards: {0:6.4f} Valid-Ratio:{1:6.4f} Perfect-Ratio:{2:6.4f}".format(total_rewards, valid_query_ratio, perfect_query_ratio))
-						
-			if (args.rl and self.model.phase >= 2 and epoch > args.rl_warmp_up):
+			else:
 				total_cost_post = self.batch_train(Data_train, batches_train[0] + batches_train[2], Data_train.responses)		
 				total_loss = total_cost_post 
 			
-			if epoch > args.rl_warmp_up:
-				glob['valid_query'] = True
-
 			# Evaluate Model	
 			if epoch % args.evaluation_interval == 0:
 				
-				total_rewards, perfect_query_ratio, valid_query_ratio, valid_db_results_map = self.batch_train_api(Data_val, batches_val[1], self.RLvalData, train=False, epoch_str=str(epoch)+"-val")
+				if epoch <= args.rl_warmp_up:
+					total_rewards, perfect_query_ratio, valid_query_ratio, valid_db_results_map = self.batch_train_api(Data_val, batches_val[1], self.RLvalData, train=False, epoch_str=str(epoch)+"-val")
 				
-				if total_rewards > glob['best_validation_rewards']:
-					
-					print("\nValidation Rewards:{0:6.4f} Best-So-far:{1:6.4f}".format(total_rewards, glob['best_validation_rewards']))
-					print("\nValidation Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
-					glob['best_validation_rewards'] = total_rewards 
-					
-					for id, db_results in train_db_results_map.items():
-						Data_train.responses[id] = db_results
+					if total_rewards > glob['best_validation_rewards']:
+						
+						print("\nValidation Rewards:{0:6.4f} Best-So-far:{1:6.4f}".format(total_rewards, glob['best_validation_rewards']))
+						print("\nValidation Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
+						glob['best_validation_rewards'] = total_rewards 
+						
+						for id, db_results in train_db_results_map.items():
+							Data_train.responses[id] = db_results
 
-					for id, db_results in valid_db_results_map.items():
-						Data_val.responses[id] = db_results
+						for id, db_results in valid_db_results_map.items():
+							Data_val.responses[id] = db_results
 
-					test_rewards, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test, batches_test[1], self.RLtestData, train=False, output=True, epoch_str="tst-"+str(epoch))
-					print("Test       Rewards:{0:6.4f}".format(test_rewards))
-					print("Test       Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
-					for id, db_results in db_results_map.items():
-						Data_test.responses[id] = db_results
-							
-					if args.task_id < 6:
-						test_oov_rewards, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test_OOV, batches_oov[1], self.RLtestOOVData, train=False, output=True, epoch_str='tst-OOV-'+str(epoch))
-						print("Test-OOV   Rewards:{0:6.4f}".format(test_oov_rewards))
-						print("Test-OOV   Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
+						test_rewards, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test, batches_test[1], self.RLtestData, train=False, output=True, epoch_str="tst-"+str(epoch))
+						print("Test       Rewards:{0:6.4f}".format(test_rewards))
+						print("Test       Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
 						for id, db_results in db_results_map.items():
-							Data_test_OOV.responses[id] = db_results
-					
-					if valid_query_ratio > 0.5:
-						glob['valid_query'] = True
+							Data_test.responses[id] = db_results
+								
+						if args.oov:
+							test_oov_rewards, perfect_query_ratio, valid_query_ratio, db_results_map = self.batch_train_api(Data_test_OOV, batches_oov[1], self.RLtestOOVData, train=False, output=True, epoch_str='tst-OOV-'+str(epoch))
+							print("Test-OOV   Rewards:{0:6.4f}".format(test_oov_rewards))
+							print("Test-OOV   Valid-Ratio:{0:6.4f} Perfect-Ratio:{1:6.4f}".format(valid_query_ratio, perfect_query_ratio))
+							for id, db_results in db_results_map.items():
+								modified_db_results = self.db_engine.modify_non_informable_slots_results(db_results)
+								Data_test_OOV.responses[id] = modified_db_results	
+				else:
 
-				
-				if glob['valid_query'] and epoch > args.rl_warmp_up:
 					train_accuracies = self.batch_predict(Data_train, batches_train, self.RLtrainData)
 					print('')
 					if args.bleu_score:
 						print('{0:30} : {1:6f}'.format("Train BLEU", train_accuracies['bleu']))
 					print('{0:30} : {1:6f}'.format("Train Accuracy", train_accuracies['acc']))
 					print('{0:30} : {1:6f}'.format("Train Dialog", train_accuracies['dialog']))
-					print('{0:30} : {1:6f}'.format("Train F1", train_accuracies['f1']))
+					print("Train F1", train_accuracies['f1'])
 					#print('{0:30} : {1:6f}'.format("Train API Match", train_accuracies['api']))
 					print('')
 					
@@ -217,7 +210,7 @@ class chatBot(object):
 						print('{0:30} : {1:6f}'.format("Validation BLEU", val_accuracies['bleu']))
 					print('{0:30} : {1:6f}'.format("Validation Accuracy", val_accuracies['acc']))
 					print('{0:30} : {1:6f}'.format("Validation Dialog", val_accuracies['dialog']))
-					print('{0:30} : {1:6f}'.format("Validation F1", val_accuracies['f1']))
+					print("Validation F1", val_accuracies['f1'])
 					#print('{0:30} : {1:6f}'.format("Validation API Match", val_accuracies['api']))
 					
 					print('')
@@ -234,7 +227,7 @@ class chatBot(object):
 						#print('Predict Test'); 
 						sys.stdout.flush()
 						#test_accuracies = self.batch_predict(Data_test, batches_test, self.RLtestData)
-						if args.task_id < 6:
+						if args.oov:
 							#print('\nPredict OOV'); sys.stdout.flush()
 							test_oov_accuracies = self.batch_predict(Data_test_OOV, batches_oov, self.RLtestOOVData, output=True, epoch_str=str(epoch)+'-OOV')
 						
@@ -244,25 +237,25 @@ class chatBot(object):
 							print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))
 						print('{0:30} : {1:6f}'.format("Test Accuracy", test_accuracies['acc']))
 						print('{0:30} : {1:6f}'.format("Test Dialog", test_accuracies['dialog']))
-						print('{0:30} : {1:6f}'.format("Test F1", test_accuracies['f1']))
+						print("Test F1", test_accuracies['f1'])
 						#print('{0:30} : {1:6f}'.format("Test API Match", test_accuracies['api']))
 						
-						if args.task_id < 6:
+						if args.oov:
 							print('')
 							if args.bleu_score:
 								print('{0:30} : {1:6f}'.format("Test OOV BLEU", test_oov_accuracies['bleu']))
 							print('{0:30} : {1:6f}'.format("Test OOV Accuracy", test_oov_accuracies['acc']))
 							print('{0:30} : {1:6f}'.format("Test OOV Dialog", test_oov_accuracies['dialog']))
-							print('{0:30} : {1:6f}'.format("Test OOV F1", test_oov_accuracies['f1']))
+							print("Test OOV F1", test_oov_accuracies['f1'])
 							#print('{0:30} : {1:6f}'.format("Test OOV API Match", test_oov_accuracies['api']))
 							
 						print('')
 						sys.stdout.flush()
 
-				if (self.model.phase == 1 and glob['valid_query']):
-					self.model.phase += 1
-					print("PHASE change to {}".format(self.model.phase))
-					print('')
+			if (self.model.phase == 1 and epoch==args.rl_warmp_up):
+				self.model.phase += 1
+				print("PHASE change to {}".format(self.model.phase))
+				print('')
 
 	# this function doesnt work due to api prediction code
 	def test(self):
@@ -356,14 +349,16 @@ class chatBot(object):
 			predictions = []
 
 			dialog_ids = []
+			turn_ids = []
 			entities = []
 			oov_words = []
 			golds = []
+			stories = []
+			readable_answers = []
 
 			post_index = len(batches_pre)
 			batches = batches_pre + batches_post
 
-			
 			#pbar = tqdm(enumerate(batches),total=len(batches))
 			#for i, indecies in pbar:
 			for i, indecies in enumerate(batches):
@@ -388,18 +383,22 @@ class chatBot(object):
 				else:
 					predictions += pad_to_answer_size(list(preds), glob['candidate_sentence_size'])
 				dialog_ids += data_batch.dialog_ids
+				readable_answers += data_batch.readable_answers
+				#print('readable_answers', readable_answers)
+				turn_ids += data_batch.turn_ids
 				entities += data_batch.entities
 				oov_words += data_batch.oov_words
 				golds += data_batch.answers
+				stories += data_batch.readable_stories
 
 			# Evaluate metrics
-			acc = evaluate(args, glob, predictions, golds, entities, dialog_ids, oov_words, out=output, run_id=self.run_id, epoch_str=epoch_str)
+			acc = evaluate(args, glob, predictions, golds, stories, entities, dialog_ids, turn_ids, readable_answers, oov_words, self.db_engine, out=output, run_id=self.run_id, epoch_str=epoch_str)
 		else:
 			acc = {}
 			acc['bleu'] = 0.0
 			acc['acc'] = 0.0
 			acc['dialog'] = 0.0
-			acc['f1'] = 0.0
+			acc['f1'] = ((0.0,0.0,0.0),(0.0,0.0,0.0),(0.0,0.0,0.0)) 
 			acc['comp'] = 0.0
 
 		# not-used 

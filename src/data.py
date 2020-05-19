@@ -198,7 +198,7 @@ class Data(object):
             rl_oov_words = []       # The OOV words in a Single Story for RL
 
             turn = int(len(story) / 2) + 1
-            story.append(query + ['$u', '#{}'.format(turn)])
+            #story.append(query + ['$u', '#{}'.format(turn)])
             self._responses.append([])
             for sentence in story:
                 sentence=sentence[:glob['sentence_size']]
@@ -499,7 +499,8 @@ class Batch(Data):
                 rl_oov_words = self._rl_oov_words[i]
             for j, sentence_c in enumerate(response):
                 sentence = sentence_c.copy()
-                sentence.extend(['$db', '#{}'.format(j+1)])
+                #sentence.extend(['$db', '#{}'.format(j+1)])
+                sentence.extend(['$db'])
                 pad = max(0, glob['sentence_size'] - len(sentence))
                 story_sentences.append([glob['word_idx'][w] if w in glob['word_idx'] else UNK_INDEX for w in sentence] + [0] * pad)
                 sentence_sizes.append(len(sentence))

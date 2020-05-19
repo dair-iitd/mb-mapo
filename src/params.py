@@ -10,9 +10,9 @@ flags.DEFINE_integer("epochs", 600, "Number of epochs to train for.")
 
 # Model Params
 flags.DEFINE_float("learning_rate", 0.0025, "Learning rate for Adam Optimizer.")
-flags.DEFINE_integer("batch_size", 16, "Batch size for training.")
-flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-flags.DEFINE_integer("embedding_size", 64, "Embedding size for embedding matrices.")
+flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
+flags.DEFINE_integer("hops", 1, "Number of hops in the Memory Network.")
+flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
 flags.DEFINE_integer("beam_width", 6, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 1, "Start Phase for RL training")
@@ -50,18 +50,18 @@ flags.DEFINE_boolean("save", False, "if True, trains using previously saved mode
 flags.DEFINE_boolean("debug", False, 'if True, enables debug mode (Verbose Errors, but slower)')
 
 # Task Type
-flags.DEFINE_integer("task_id", 6, "bAbI task id, 1 <= id <= 8")
-flags.DEFINE_boolean('train', False, 'if True, begin to train')
-flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
+flags.DEFINE_integer("task_id", 7, "bAbI task id, 1 <= id <= 8")
+flags.DEFINE_boolean('train', True, 'if True, begin to train')
+flags.DEFINE_boolean('oov', True, 'if True, use OOV test set')
 
 # File Locations
-flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
+flags.DEFINE_string("data_dir", "../data-small/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
 flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
 #flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-all.txt", "kb file for this task")
 #flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt", "kb file for this task")
-#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
-flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-dstc2-kb-all.txt", "kb file for this task")
+flags.DEFINE_string("kb_file", "../data-small/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
+#flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-dstc2-kb-all.txt", "kb file for this task")
 flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
 
 def get_params():
@@ -76,14 +76,22 @@ def print_params(logging, args):
 
 	if "babi" in args.kb_file:
 		args.max_api_length = 5
+		args.rl_warmp_up = 20
 		if args.rl_mode == 'MAPO':
 			args.beam == True
 			args.beam_width = 32
 		elif args.rl_mode == 'HYBRID':
 			args.beam == True
 			args.beam_width = 4
-		args.rl_warmp_up = 20
+		elif args.rl_mode == 'SL':
+			args.beam == True
+			args.beam_width = 1
+		elif args.rl_mode == 'RL':
+			args.beam == True
+			args.beam_width = 8
+		args.bleu_score = False
 	if "camrest" in args.kb_file:
+		args.rl_warmp_up = 70
 		args.max_api_length = 4
 		if args.rl_mode == 'MAPO':
 			args.beam == True
@@ -91,18 +99,34 @@ def print_params(logging, args):
 		elif args.rl_mode == 'HYBRID':
 			args.beam == True
 			args.beam_width = 4
-		args.rl_warmp_up = 40
+		elif args.rl_mode == 'SL':
+			args.beam == True
+			args.beam_width = 1
+		elif args.rl_mode == 'RL':
+			args.beam == True
+			args.beam_width = 8
+			args.rl_warmp_up = 200
+		args.bleu_score = True
 	if "dstc2" in args.kb_file:
 		args.max_api_length = 4
+		args.rl_warmp_up = 70
 		if args.rl_mode == 'MAPO':
 			args.beam == True
-			args.beam_width = 32
+			args.beam_width = 16
 		elif args.rl_mode == 'HYBRID':
 			args.beam == True
 			args.beam_width = 8
-		args.rl_warmp_up = 20
+		elif args.rl_mode == 'SL':
+			args.beam == True
+			args.beam_width = 1
+		elif args.rl_mode == 'RL':
+			args.beam == True
+			args.beam_width = 1
+			args.rl_warmp_up = 200
+		args.bleu_score = True
+	
 	'''
-		Print important model parameters
+	Print important model parameters
 	'''
 	print('\n# {}'.format('Model Params'))
 	logging.info('[{}] : {}'.format('learning_rate', args.learning_rate))
@@ -114,8 +138,7 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('memory_size', args.memory_size))
 	logging.info('[{}] : {}'.format('phase', args.phase))
 	logging.info('[{}] : {}'.format('model_index', args.model_index))
-	
-	
+
 	print('\n# {}'.format('Word Drop'))
 	logging.info('[{}] : {}'.format('word_drop', args.word_drop))
 	logging.info('[{}] : {}'.format('word_drop_prob', args.word_drop_prob))
@@ -143,11 +166,11 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('bleu_score', args.bleu_score))
 	logging.info('[{}] : {}'.format('save', args.save))
 	logging.info('[{}] : {}'.format('debug', args.debug))
-	
+
 	print('\n# {}'.format('Task Type'))
 	logging.info('[{}] : {}'.format('task_id', args.task_id))
 	logging.info('[{}] : {}'.format('train', args.train))
-	logging.info('[{}] : {}'.format('OOV', args.OOV))
+	logging.info('[{}] : {}'.format('OOV', args.oov))
 
 	print('\n# {}'.format('File Locations'))
 	logging.info('[{}] : {}'.format('model_dir', args.model_dir))

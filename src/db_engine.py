@@ -19,28 +19,43 @@ class DbEngine(object):
 		self.kb_file = kb_file
 		self.key_field_name = key_field_name
 		
-		self._populate_field_name_to_index_map()
-		self._read_db()
-		self._build_index()
 		if 'babi' in kb_file:
 			self._data_set = "babi"
+			self._informable_field_names = ["R_cuisine","R_location","R_price","R_number"]
 		elif 'camrest' in kb_file:
 			self._data_set = "camrest"
+			self._informable_field_names = ['R_area', 'R_food','R_pricerange']
 		elif 'dstc2' in kb_file:
 			self._data_set = "dstc2"
+			self._informable_field_names = ['R_cuisine', 'R_location','R_price']
 		else:
 			print("ERROR: unknown kb file")
 			sys.exit()
+		
+		self._informable_field_values = set([])
+		self._all_field_values = set([])
+		self._populate_field_name_to_index_map()
+		self._read_db()
+		self._build_index()
 
 	@property
 	def fields(self):
 		return self.field_names
 
 	@property
+	def informable_field_names(self):
+		return self._informable_field_names
+
+	@property
 	def entities(self):
 		return self._entities
+	
+	@property
+	def requestable_to_informable_slots(self):
+		return self._requestable_to_informable_slots
 
 	def _populate_field_name_to_index_map(self):
+
 		field_name_set=set([])
 		with open(self.kb_file) as f:
 			for line in f:
@@ -58,10 +73,15 @@ class DbEngine(object):
 			self._field_name_to_index_map[field_name]=index
 			self.field_names[index] = field_name
 			index+=1
+		#print(self.field_names)
+		#sys.exit(0)
 
 	def _read_db(self):
 	
 		self._db = []
+		key_field_to_all_fields_map = {}
+		
+
 		total_fields = len(self._field_name_to_index_map)
 		entities_set = set([])
 		with open(self.kb_file) as f:
@@ -74,6 +94,18 @@ class DbEngine(object):
 				key = line_split[1]
 				rel = line_split[2]
 				value = line_split[3]
+				if key not in key_field_to_all_fields_map:
+					key_field_to_all_fields_map[key] = []
+				key_field_to_all_fields_map[key].append((rel,value))
+
+				self._all_field_values.add(key)
+				self._all_field_values.add(value)
+				if rel in self._informable_field_names:
+					self._informable_field_values.add(value)
+				else:
+					self._all_field_values.add(key[::-1])
+					self._all_field_values.add(value[::-1])
+					
 				entities_set.add(value)
 				if key != prev_key or record[self._field_name_to_index_map[rel]] != "":
 					if record[0] != '':
@@ -93,6 +125,16 @@ class DbEngine(object):
 		for key,value in self._field_name_to_index_map.items():
 			self._index_to_field_name_map[value]=key
 
+		self._requestable_to_informable_slots = {}
+		for key in key_field_to_all_fields_map:
+			self._requestable_to_informable_slots[key] = []
+			for rel, value in key_field_to_all_fields_map[key]:
+				if rel in self._informable_field_names:
+					self._requestable_to_informable_slots[key].append(value)
+			for rel, value in key_field_to_all_fields_map[key]:
+				if rel not in self._informable_field_names:
+					self._requestable_to_informable_slots[value] = copy.deepcopy(self._requestable_to_informable_slots[key])
+
 	def _build_index(self):
 		
 		self._inverted_index = {}
@@ -107,6 +149,25 @@ class DbEngine(object):
 					self._inverted_index[self._index_to_field_name_map[field_id]][value].add(db_id)
 				else:
 					self._inverted_index[self._index_to_field_name_map[field_id]][value] = set([db_id])
+
+	def is_informable_field_value(self, entity):
+		if entity in self._informable_field_values:
+			return True
+		return False
+	
+	def get_entities_in_utt(self,utt):
+		words = utt.split()
+		entities = set([])
+		informable_entities = set([])
+		for word in words:
+			if word == "ask":
+				continue
+			if word in self._all_field_values:
+				entities.add(word)
+				if word in self._informable_field_values:
+					informable_entities.add(word)
+		
+		return entities, informable_entities
 
 	def is_query_valid(self, query):
 		
@@ -195,7 +256,23 @@ class DbEngine(object):
 			for i, field in zip(select_field_indices, result):
 				if i != DbEngine.KEY_INDEX:
 					formatted_results.append([key_value.lower(), self.field_names[i], field.lower()])
-		return formatted_results
+		return formatted_results[:150]
+
+	def modify_non_informable_slots_results(self, results):
+		modified_results = []
+		if len(results) == 0:
+			return results
+		else:
+			for result in results:
+				modified_result = []
+				modified_result.append(result[0][::-1])
+				modified_result.append(result[1])
+				if self.is_informable_field_value(result[2]):
+					modified_result.append(result[2])
+				else:
+					modified_result.append(result[2][::-1])
+				modified_results.append(copy.deepcopy(modified_result))
+		return modified_results
 
 	def _is_invalid_condition(self, condition):
 
@@ -326,7 +403,7 @@ class QueryGenerator(object):
 	def _get_conditions(self,entities):
 	
 		all_conditions = []
-		field_names = self._dbObject.field_names
+		field_names = self._dbObject.informable_field_names
 		field_names.sort()
 		
 		# should be set to max if anything other than AND conditions are used 
@@ -341,7 +418,10 @@ class QueryGenerator(object):
 			#field_name_combinations = list(itertools.permutations(field_names, k))
 			field_name_combinations = list(itertools.combinations(field_names, k))
 			
-			for entity_permutation in entity_permutations:
+			total_length = len(entity_permutations)
+			#print("\t",total_length)
+			for idx, entity_permutation in enumerate(entity_permutations):
+				#print("\t\t", idx, total_length)
 				for field_name_combination in field_name_combinations:
 					assert len(entity_permutation) == len(field_name_combination)
 					conditions = []
@@ -355,16 +435,33 @@ class QueryGenerator(object):
 							conditions.append(condition)
 
 					if not invalid_flag:
+						#print(conditions)
 						all_conditions.append(conditions)
 		
 		return all_conditions
 
-	def get_high_recall_queries(self, input_entities, output_entities):
+	def get_high_recall_queries(self, input_entities, output_entities, train_entities):
 		
 		high_recall_queries = []
 		output_entities_set = set(output_entities)
+
 		
-		where_clauses = self._get_conditions(input_entities)
+		modified_input_entities = set([])
+		for input_entity in input_entities:
+			modified_input_entities.add(input_entity)
+
+		for output_entity in output_entities:
+			if output_entity in self._dbObject.requestable_to_informable_slots:
+				related_informable_entities = self._dbObject.requestable_to_informable_slots[output_entity]
+				for related_informable_entity in related_informable_entities:
+					if related_informable_entity in train_entities:
+						modified_input_entities.add(related_informable_entity)
+
+		#print("input_entities", input_entities)
+		#print("output_entities", output_entities)
+		#print("modified_input_entities", modified_input_entities)
+
+		where_clauses = self._get_conditions(modified_input_entities)
 		alreadyChecked = set([])
 		for where_clause in where_clauses:
 			query = self._dbObject.get_api_call_from_where_clauses(where_clause)
@@ -377,13 +474,23 @@ class QueryGenerator(object):
 				_, _, result_set = self._dbObject.execute(query)
 				QueryGenerator.Cache[query] = result_set
 			if len(result_set)>0:
-				if result_set.intersection(output_entities) == output_entities_set:
+				# full recall fscore rewards - first line
+				# fscore rewards - second line
+				#if result_set.intersection(output_entities_set) == output_entities_set:
+				if len(result_set.intersection(output_entities_set)) > 0: 
+					if result_set.intersection(output_entities_set) != output_entities_set:
+						print(query)
+						print(result_set.intersection(output_entities_set))
+						print(output_entities_set)
+						print("")
 					high_recall_queries.append(query)
+
 		return high_recall_queries
 
 if __name__ == "__main__":
-	'''
-	#kb_file="../data/dialog-bAbI-tasks/dialog-babi-kb-task3.txt"
+
+	
+	#kb_file="../data/dialog-bAbI-tasks/dialog-dstc2-kb-all.txt"
 	kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
 	babi_db = DbEngine(kb_file, "R_name")
 
@@ -402,15 +509,12 @@ if __name__ == "__main__":
 	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
 	input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'expensive', 'centre', 'afghan', 'turkish', 'king_street_city_centre']
 	output_entities=['anatolia', 'moderate', '30_bridge_street_city_centre']
-	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities)
+	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities, [])
 
 	for high_recall_query in high_recall_queries:
 		print(high_recall_query)
+	
 	'''
-
-	kb_file="../data/dialog-bAbI-tasks/dialog-dstc2-kb-all.txt"
-	babi_db = DbEngine(kb_file, "R_name")
-
 	query = 'api_call dontcare west moderate'
 	
 	print("Is Query Valid: ", babi_db.is_query_valid(query))
@@ -418,15 +522,23 @@ if __name__ == "__main__":
 	if babi_db.is_query_valid(query):
 		select_fields, results, result_entities_set = babi_db.execute(query)
 		results = babi_db.get_formatted_results(select_fields, results)
+		modified_results = babi_db.modify_non_informable_slots_results(results)
 		print("")
-		for result in results:
+		for result in modified_results:
 			print(result)
 		print("\n-----------------------\n")
+	'''
+	
+	#entities, informable_entities = babi_db.get_entities_in_utt("the dojo_noodle_bar serves asian_oriental food . they are located at 40210_millers_yard_city_centre and their phone number is 01223_363471 .")
+	#print(entities)
+	#print(informable_entities)
 
+	'''
 	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
 	input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'italian', 'moderate', 'west', 'turkish', 'king_street_city_centre']
 	output_entities=['saint_johns_chop_house_post_code', 'prezzo_address']
-	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities)
+	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities, train_entities)
 
 	for high_recall_query in high_recall_queries:
-		print(high_recall_query)
+		print(high_recall_query)	
+	'''

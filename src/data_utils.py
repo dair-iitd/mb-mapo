@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import os
 import re
 import json
+import copy
 import sys
 from constraints.constraints_generator import *
 from collections import defaultdict
@@ -78,22 +79,27 @@ def get_decoder_vocab(data_dir, task_id):
     decoder_index_to_vocab = {v: k for k, v in decoder_vocab_to_index.items()}
     return decoder_vocab_to_index, decoder_index_to_vocab, candidate_sentence_size+1 #(EOS)
 
-def load_dialog_task(data_dir, task_id, rl, sort):
+def load_dialog_task(args):
     ''' 
         Load Train, Test, Validation Dialogs 
     '''
+    rl = args.rl
+    sort = args.sort
+    task_id = args.task_id
+    data_dir = args.data_dir
+    
     assert task_id > 0 and task_id < 9
     files = os.listdir(data_dir)
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
     train_file = [f for f in files if s in f and 'trn' in f][0]
-    test_file = [f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
+    test_file = [f for f in files if s in f and 'tst' in f and 'oov' not in f][0]
     val_file = [f for f in files if s in f and 'dev' in f][0]
     train_data = parse_dialogs(train_file, rl, sort)
     test_data = parse_dialogs(test_file, rl, sort)
     val_data = parse_dialogs(val_file, rl, sort)
-    if task_id < 6:
-        oov_file = [f for f in files if s in f and 'tst-OOV' in f][0]
+    if args.oov:
+        oov_file = [f for f in files if s in f and 'tst-oov' in f][0]
         oov_data = parse_dialogs(oov_file, rl, sort)
     else:
         oov_data = None        
@@ -172,10 +178,10 @@ def parse_dialogs(file, rl, sort):
                         trap_next = True
                         trap_u = u[:]
                     continue
-                data.append((context[:]+u[:], u[:], r[:], dialog_id, turn_id, database))
+                data.append((context[:]+[u], u[:], r[:], dialog_id, turn_id, database))
                 u.extend(['$u', '#{}'.format(turn_id)])
                 r.extend(['$r', '#{}'.format(turn_id)])
-                context.append(u); context.append(r)
+                context.append(copy.deepcopy(u)); context.append(copy.deepcopy(r))
                 turn_id += 1
             else:
                 if not db_start: db_start = True
@@ -191,7 +197,7 @@ def parse_dialogs(file, rl, sort):
 #########                                RL Helper Functions                             ##########
 ###################################################################################################
 
-def load_RL_data(data_dir, task_id):
+def load_RL_data(args):
     ''' 
         Load Train, Test, Validation RL Preprocessed Data
     '''
@@ -214,33 +220,50 @@ def load_RL_data(data_dir, task_id):
 
         return parsed
 
+    data_dir = args.data_dir
+    task_id = args.task_id
+
     assert task_id > 0 and task_id < 9
     rL_folder = data_dir + "task{}".format(task_id)
     files = os.listdir(rL_folder)
     files = [os.path.join(rL_folder, f) for f in files]
     train_file = [f for f in files if 'trn' in f][0]
-    test_file = [f for f in files if 'tst' in f and 'OOV' not in f][0]
+    test_file = [f for f in files if 'tst' in f and 'oov' not in f][0]
     val_file = [f for f in files if 'dev' in f][0]
     train_data = parse_json(train_file)
     test_data = parse_json(test_file)
     val_data = parse_json(val_file)
-    if task_id < 6:
-        oov_file = [f for f in files if 'tst-OOV' in f][0]
+    if args.oov:
+        oov_file = [f for f in files if 'tst-oov' in f][0]
         oov_data = parse_json(oov_file)
     else:
         oov_data = None
     return train_data, test_data, val_data, oov_data
 
-def get_rl_vocab(db_engine):
+def get_rl_vocab(db_engine, data_dir, task_id):
     '''
         Get RL vocabulary from the Processes Train data
     '''
     fields = db_engine.fields
-    #entities = db_engine.entities
-
-    #vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare1', 'dontcare2', 'dontcare3', 'dontcare4']
+    
     vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
-    #rl_word_idx = dict((c, i + len(vocab)) for i, c in enumerate(fields + entities))
+    '''
+    rl_folder = data_dir + "task{}".format(task_id)
+    files = os.listdir(rl_folder)
+    files = [os.path.join(rl_folder, f) for f in files]
+    train_file = [f for f in files if 'trn' in f][0]
+    
+    all_entities = set([])
+    json_object = json.load(open(train_file))
+    parsed = dict()
+    for dialog in json_object:
+        entities_in_last_turn = dialog['turns'][-1]['entities_so_far']
+        for entity in entities_in_last_turn:
+            all_entities.add(entity)
+    
+    for entity in all_entities:
+        vocab.append(entity)
+    '''
     rl_word_idx = {}
     for i, val in enumerate(vocab):
         rl_word_idx[val] = i

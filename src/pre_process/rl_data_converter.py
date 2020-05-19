@@ -6,6 +6,7 @@ import copy
 import json
 from db_engine import DbEngine, QueryGenerator
 
+train_entities=set([])
 entities=set([])
 max_total_high_recall_queries = 0
 
@@ -19,10 +20,11 @@ max_total_high_recall_queries = 0
 
 ## dstc2
 
-# set to babi or camrest
-dataset="dstc2"
+# set to babi, dstc2 or camrest
+dataset="camrest"
 # for babi, set the task
 task=3
+input_folder = "../../data-fscore/dialog-bAbI-tasks/"
 
 find_replace={}
 
@@ -166,8 +168,7 @@ def load_kb_entities(kb_file):
 		entities.add("afghan")
 		entities.add("german")
 		entities.add("barbeque")
-		entities.add("inexpensive")
-		
+				
 def get_entities(str):
 	words = str.split(" ")
 	str_entities=[]
@@ -275,7 +276,7 @@ def convert_file(input_file, output_file, queryGenerator):
 						
 					if r.startswith("api_call"):
 						api_call_flag=True
-						# Comment this if dontcare is slot specific
+						# Uncomment this if dontcare is required to be slot specific
 						'''
 						api_call_words = r.split()
 						api_call_str = ""
@@ -298,8 +299,6 @@ def convert_file(input_file, output_file, queryGenerator):
 								api_call_str = api_call_str + " " + api_call_word
 						api_call_str = api_call_str.strip()
 
-						#api_call_str = r.strip()
-						
 						prev_user_utt=u
 						continue
 					turn = {}
@@ -351,8 +350,21 @@ def convert_file(input_file, output_file, queryGenerator):
 			dialog['turns']=turns
 			dialog=update_kb_links(dialog)
 			corpus.append(copy.deepcopy(dialog))
-		
+	
+	if 'trn.txt' in input_file:
+		for dialog in corpus:
+			last_turn = dialog['turns'][-1]
+			for entity in last_turn['entities_so_far']:
+				train_entities.add(entity)
+			for entity in last_turn['next_entities']:
+				train_entities.add(entity)
+	
+	if len(train_entities)==0:
+		print("ERROR: No train entities found.")
+		sys.exit(0)
+
 	# for each dialog, generate high recall actions
+	
 	count = 1
 	total = len(corpus)
 	for dialog in corpus:
@@ -363,7 +375,7 @@ def convert_file(input_file, output_file, queryGenerator):
 			if turn['make_api_call']==True:
 				input_entities = turn['entities_so_far']
 				output_entities = turn['next_entities']
-				high_recall_queries = queryGenerator.get_high_recall_queries(input_entities, output_entities)
+				high_recall_queries = queryGenerator.get_high_recall_queries(input_entities, output_entities, train_entities)
 				if len(high_recall_queries) > max_total_high_recall_queries:
 					max_total_high_recall_queries = len(high_recall_queries)
 					print('input_entities', input_entities)
@@ -460,8 +472,7 @@ def remove_dstc2_dialogs(input_file, output_file):
 
 if __name__ == "__main__":
 
-	input_folder = "../../data/dialog-bAbI-tasks/"
-	files = ['tst.txt', 'trn.txt', 'dev.txt']
+	files = ['trn.txt', 'tst.txt', 'dev.txt']
 	
 	if dataset=='babi':
 		files.append('tst-OOV.txt')
