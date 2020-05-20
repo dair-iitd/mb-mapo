@@ -476,8 +476,8 @@ class QueryGenerator(object):
 			if len(result_set)>0:
 				# full recall fscore rewards - first line
 				# fscore rewards - second line
-				#if result_set.intersection(output_entities_set) == output_entities_set:
-				if len(result_set.intersection(output_entities_set)) > 0: 
+				if result_set.intersection(output_entities_set) == output_entities_set:
+				#if len(result_set.intersection(output_entities_set)) > 0: 
 					if result_set.intersection(output_entities_set) != output_entities_set:
 						print(query)
 						print(result_set.intersection(output_entities_set))

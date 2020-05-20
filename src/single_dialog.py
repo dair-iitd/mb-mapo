@@ -482,7 +482,7 @@ class chatBot(object):
 					#print(actions)
 
 			db_results, batched_actions_and_rewards, high_probable_rewards, total_entries, valid_entries, perfect_match_entries = \
-					calculate_reward(glob, actions, pred_action_lengths, batch_entry, rl_data, self.db_engine, self.model, args, data, out_file=file, mode=args.rl_mode, epoch_str=epoch_str)
+					calculate_reward(glob, actions, pred_action_lengths, batch_entry, rl_data, self.db_engine, self.model, args, data, out_file=file, mode=args.rl_mode, epoch_str=epoch_str, train=train)
 			total_entries_sum += total_entries
 			valid_entries_sum += valid_entries
 			perfect_match_entries_sum += perfect_match_entries

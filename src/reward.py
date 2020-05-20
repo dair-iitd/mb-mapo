@@ -348,7 +348,7 @@ def softmax(x):
 # GT : No decoder, the ground truth is returned
 # GREEDY : the decoder is trained with the action with highest reward in the buffer
 # MAPO : the decoder is trained using MAPOs
-def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_engine, model, args, data, out_file=None, mode="GT", epoch_str=""):
+def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_engine, model, args, data, out_file=None, mode="GT", epoch_str="", train=False):
 	'''
 		Input: An 3D array of actions [batch_size x beam_size x action]
 			- For each action/API convert from idx to rl vocab (use glob['idx_rl'])
@@ -390,8 +390,6 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 
 	
 	if mode == "HYBRID":
-		# width set to 2 for SCST
-		# set to one for just MIL
 		total_width = 2
 	elif mode == "MAPO":
 		total_width = 2
@@ -542,6 +540,8 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					batched_actions_and_rewards[0].add_entry(
 					copy.deepcopy(np.array(action)), copy.deepcopy(np.array(action_emb_lookup)), copy.deepcopy(np.array(action_size)), copy.deepcopy(np.array([1.0])))
 					queries_added+=1
+					if train:
+						batched_db_results.append(db_engine.get_formatted_results(select_fields, db_results))
 		
 		## 2. Push samples outside the buffer into batched_actions_and_rewards 
 
@@ -576,7 +576,8 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				batched_actions_and_rewards[0].add_entry(
 					(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([reward]))
 				total_repeated_rewards += reward
-			batched_db_results.append(formatted_results)
+			if train==False:
+				batched_db_results.append(formatted_results)
 		
 		elif mode == "RL":
 			beam_actions_and_rewards = ActionsAndRewards()
