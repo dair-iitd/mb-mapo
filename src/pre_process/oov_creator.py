@@ -86,41 +86,53 @@ def modify_dialog_json(dialog):
     modified_dialog['turns'] = modified_turns
     return modified_dialog
 
-taskid = 7
-folder = "data-fscore"
+if __name__ == "__main__":
+    
+    taskids = [7,6]
+    folder = "data"
+    #folder = "data-heuristic-predicted"
+    
+    for taskid in taskids:
+        
+        if taskid == 7:
+            input_folder = "../../"+folder+ "/dialog-bAbI-tasks/"
+            tst_files = input_folder+'dialog-babi-task7-camrest676-tst-modified.txt'
+            if folder == "data":
+                json_file = input_folder+'task7/dialog-camrest-tst.json'
+            else:
+                json_file = input_folder+'task7/dialog-camrest-tst-modified.json'
 
-if taskid == 7:
-    input_folder = "../../"+folder+ "/dialog-bAbI-tasks/"
-    tst_files = input_folder+'dialog-babi-task7-camrest676-tst-modified.txt'
-    json_file = input_folder+'task7/dialog-camrest-tst.json'
-    kb_file = input_folder+'dialog-camrest-kb-all.txt'
-elif taskid == 6:
-    input_folder = "../../"+folder+ "/dialog-bAbI-tasks/"
-    tst_files = input_folder+'dialog-babi-task6-dstc2-filtered-tst-modified.txt'
-    json_file = input_folder+'task6/dialog-babi-task6-dstc2-tst.json'
-    kb_file = input_folder+'dialog-dstc2-kb-all.txt'
+            kb_file = input_folder+'dialog-camrest-kb-all.txt'
+        elif taskid == 6:
+            input_folder = "../../"+folder+ "/dialog-bAbI-tasks/"
+            tst_files = input_folder+'dialog-babi-task6-dstc2-filtered-tst-modified.txt'
+            if folder == "data":
+                json_file = input_folder+'task6/dialog-babi-task6-dstc2-tst.json'
+            else:
+                json_file = input_folder+'task6/dialog-babi-task6-dstc2-filtered-tst-modified.json'
+            kb_file = input_folder+'dialog-dstc2-kb-all.txt'
 
-dbEngine = DbEngine(kb_file, "R_name")
+        dbEngine = DbEngine(kb_file, "R_name")
 
-dialogs = get_dialogs(tst_files)
+        dialogs = get_dialogs(tst_files)
 
-modified_dialogs = []
-for dialog in dialogs:
-    modified_dialogs.append(modify_dialog(dialog))
+        modified_dialogs = []
+        for dialog in dialogs:
+            modified_dialogs.append(modify_dialog(dialog))
 
-out_file = open(tst_files.replace("tst","tst-oov"),"w") 
-for dialog in modified_dialogs:
-	out_file.write(printable_dialog(dialog))
-out_file.close() 
+        out_file = open(tst_files.replace("tst","tst-oov"),"w") 
+        for dialog in modified_dialogs:
+            out_file.write(printable_dialog(dialog))
+        out_file.close() 
 
-with open(json_file) as f:
-  dialogs = json.load(f)
-modified_dialogs = []
-for dialog in dialogs:
-    modified_dialogs.append(modify_dialog_json(dialog))
+        with open(json_file) as f:
+            dialogs = json.load(f)
+        modified_dialogs = []
+        for dialog in dialogs:
+            modified_dialogs.append(modify_dialog_json(dialog))
 
-with open(json_file.replace("tst","tst-oov"), 'w') as json_file:
-  json.dump(modified_dialogs, json_file)
+        with open(json_file.replace("tst","tst-oov"), 'w') as json_file:
+            json.dump(modified_dialogs, json_file)
 
 
 

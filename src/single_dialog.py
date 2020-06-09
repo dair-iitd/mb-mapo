@@ -37,7 +37,9 @@ class chatBot(object):
 						+ "_wd-" + str(args.word_drop_prob) 
 						+ "_pw-" + str(args.p_gen_loss_weight) 
 						+ "_rlmode-" + str(args.rl_mode)
-						+ "_idx-" + str(args.model_index))
+						+ "_idx-" + str(args.model_index)
+						+ "_pi_b-" + str(args.pi_b))
+
 		self.model_dir = (args.model_dir +  self.run_id + "_model/")
 		if not os.path.exists(self.model_dir):
 			os.makedirs(self.model_dir)
@@ -147,16 +149,39 @@ class chatBot(object):
 		else:
 			best_validation_accuracy = 0
 
+		if args.load_api_from_file:
+			train_db_results_map, test_db_results_map, valid_db_results_map, test_oov_db_results_map = load_api_calls_from_file(args, self.db_engine)
+			for id, db_results in train_db_results_map.items():
+				Data_train.responses[id] = db_results
+
+			for id, db_results in valid_db_results_map.items():
+				Data_val.responses[id] = db_results
+
+			for id, db_results in test_db_results_map.items():
+				Data_test.responses[id] = db_results
+
+			if args.oov:
+				for id, db_results in test_oov_db_results_map.items():
+					modified_db_results = self.db_engine.modify_non_informable_slots_results(db_results)
+					Data_test_OOV.responses[id] = modified_db_results
+
+
 		# Train Model in Batch Mode
 		loss_buffer = deque()
 		for epoch in range(1, args.epochs + 1):			
 			print('************************')
+			
+			if (self.model.phase == 1 and epoch>=args.rl_warmp_up):
+				self.model.phase += 1
+				print("PHASE change to {}".format(self.model.phase))
+				print('')
+
 			print('\nEpoch {}'.format(epoch), 'Phase {}'.format(self.model.phase)); sys.stdout.flush()
 				
 			if epoch <= args.rl_warmp_up:
 				total_reward, perfect_query_ratio, valid_query_ratio, _ = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData)
 
-				total_rewards, perfect_query_ratio, valid_query_ratio, train_db_results_map = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData, train=False, output=True, epoch_str=str(epoch)+"-trn")
+				total_rewards, perfect_query_ratio, valid_query_ratio, train_db_results_map = self.batch_train_api(Data_train, batches_train[1], self.RLtrainData, train=False, output=True, epoch_str=str(epoch)+"-trn", use_gold=True)
 				print("\nTrain Rewards: {0:6.4f} Valid-Ratio:{1:6.4f} Perfect-Ratio:{2:6.4f}".format(total_rewards, valid_query_ratio, perfect_query_ratio))
 			else:
 				total_cost_post = self.batch_train(Data_train, batches_train[0] + batches_train[2], Data_train.responses)		
@@ -166,7 +191,7 @@ class chatBot(object):
 			if epoch % args.evaluation_interval == 0:
 				
 				if epoch <= args.rl_warmp_up:
-					total_rewards, perfect_query_ratio, valid_query_ratio, valid_db_results_map = self.batch_train_api(Data_val, batches_val[1], self.RLvalData, train=False, epoch_str=str(epoch)+"-val")
+					total_rewards, perfect_query_ratio, valid_query_ratio, valid_db_results_map = self.batch_train_api(Data_val, batches_val[1], self.RLvalData, train=False, output=True, epoch_str=str(epoch)+"-val", use_gold=True)
 				
 					if total_rewards > glob['best_validation_rewards']:
 						
@@ -251,11 +276,10 @@ class chatBot(object):
 							
 						print('')
 						sys.stdout.flush()
-
-			if (self.model.phase == 1 and epoch==args.rl_warmp_up):
-				self.model.phase += 1
-				print("PHASE change to {}".format(self.model.phase))
-				print('')
+			
+			if args.rl_warmp_up == epoch:
+				print("Query Predictor Training Complete")
+				sys.exit(0)
 
 	# this function doesnt work due to api prediction code
 	def test(self):
@@ -432,7 +456,7 @@ class chatBot(object):
 		# print(parent_ids)
 		# print(predict_ids)
 
-	def batch_train_api(self, data, batches, rl_data, train=True, output=False, epoch_str=""):
+	def batch_train_api(self, data, batches, rl_data, train=True, output=False, epoch_str="", use_gold=False):
 		'''
 			Train Model for a Batch of Input Data
 		'''
@@ -482,7 +506,7 @@ class chatBot(object):
 					#print(actions)
 
 			db_results, batched_actions_and_rewards, high_probable_rewards, total_entries, valid_entries, perfect_match_entries = \
-					calculate_reward(glob, actions, pred_action_lengths, batch_entry, rl_data, self.db_engine, self.model, args, data, out_file=file, mode=args.rl_mode, epoch_str=epoch_str, train=train)
+					calculate_reward(glob, actions, pred_action_lengths, batch_entry, rl_data, self.db_engine, self.model, args, data, out_file=file, mode=args.rl_mode, epoch_str=epoch_str, use_gold=use_gold)
 			total_entries_sum += total_entries
 			valid_entries_sum += valid_entries
 			perfect_match_entries_sum += perfect_match_entries

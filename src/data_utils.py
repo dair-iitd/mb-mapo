@@ -20,7 +20,8 @@ __all__ =  ["get_decoder_vocab",
             "pad_to_answer_size", 
             "create_batches",
             "calculate_beam_result",
-            "get_rl_decode_length_vs_index"]
+            "get_rl_decode_length_vs_index",
+            "load_api_calls_from_file"]
 
 np.set_printoptions(threshold=np.inf)
 
@@ -238,6 +239,58 @@ def load_RL_data(args):
         oov_data = parse_json(oov_file)
     else:
         oov_data = None
+    return train_data, test_data, val_data, oov_data
+
+def parse_api_file(filepath, db_engine, use_gold):
+    db_results_map = {}
+    with open(filepath, 'r') as file:
+        dialog_id = 0
+        gold = ""
+        pred = ""
+        for line in file.readlines():
+            if "id =" in line:
+                dialog_id = int(line.replace("id = ", "").strip())
+            if "gold : " in line:
+                gold = line.replace("gold : ", "").strip()
+            if "pred : " in line:
+                pred = line.replace("pred : ", "").strip() 
+                query = ""
+                if use_gold:
+                    query = gold
+                else:
+                    query = pred
+                select_fields, db_results, result_entities_set = db_engine.execute(query)
+                formatted_results = db_engine.get_formatted_results(select_fields, db_results)
+                db_results_map[dialog_id] = formatted_results
+    return db_results_map
+
+def load_api_calls_from_file(args, dbEngine):
+    
+    task_id = args.task_id
+    mode = args.rl_mode
+    data_dir = args.data_dir + "api/task"+str(task_id)+"/"+mode+"/"
+    
+    files = os.listdir(data_dir)
+    files = [os.path.join(data_dir, f) for f in files]
+    train_file = [f for f in files if 'trn' in f][0]
+    test_file = [f for f in files if 'tst' in f and 'OOV' not in f][0]
+    val_file = [f for f in files if 'val' in f][0]
+    
+    use_gold_train = False
+    use_gold_test = False
+    if mode == "SL" or mode == "GT":
+        use_gold_train = True
+    if args.rl_mode == "GT":
+        use_gold_test = True
+        
+    train_data = parse_api_file(train_file, dbEngine, use_gold_train)
+    test_data = parse_api_file(test_file, dbEngine, use_gold_test)
+    val_data = parse_api_file(val_file, dbEngine, use_gold_train)
+    if args.oov:
+        oov_file = [f for f in files if 'tst-OOV' in f][0]
+        oov_data = parse_api_file(oov_file, dbEngine, use_gold_test)
+    else:
+        oov_data = None        
     return train_data, test_data, val_data, oov_data
 
 def get_rl_vocab(db_engine, data_dir, task_id):

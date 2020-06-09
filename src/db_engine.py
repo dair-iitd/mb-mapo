@@ -135,6 +135,12 @@ class DbEngine(object):
 				if rel not in self._informable_field_names:
 					self._requestable_to_informable_slots[value] = copy.deepcopy(self._requestable_to_informable_slots[key])
 
+	def is_entity_word(self, word):
+		if word in self._all_field_values:
+			return True
+		else:
+			return False
+			
 	def _build_index(self):
 		
 		self._inverted_index = {}
@@ -245,7 +251,7 @@ class DbEngine(object):
 		finally:
 			return select_fields, results, result_entities_set 
 
-	def get_formatted_results(self, select_fields, results):
+	def get_formatted_results(self, select_fields, results, clip=True):
 		formatted_results = []
 		if len(select_fields) == 0:
 			select_field_indices = [i for i in range(len(self.field_names))]
@@ -256,7 +262,10 @@ class DbEngine(object):
 			for i, field in zip(select_field_indices, result):
 				if i != DbEngine.KEY_INDEX:
 					formatted_results.append([key_value.lower(), self.field_names[i], field.lower()])
-		return formatted_results[:150]
+		if clip:
+			return formatted_results[:150]
+		else:
+			return formatted_results
 
 	def modify_non_informable_slots_results(self, results):
 		modified_results = []
@@ -450,13 +459,15 @@ class QueryGenerator(object):
 		for input_entity in input_entities:
 			modified_input_entities.add(input_entity)
 
+		'''
 		for output_entity in output_entities:
 			if output_entity in self._dbObject.requestable_to_informable_slots:
 				related_informable_entities = self._dbObject.requestable_to_informable_slots[output_entity]
 				for related_informable_entity in related_informable_entities:
 					if related_informable_entity in train_entities:
 						modified_input_entities.add(related_informable_entity)
-
+		'''
+		
 		#print("input_entities", input_entities)
 		#print("output_entities", output_entities)
 		#print("modified_input_entities", modified_input_entities)

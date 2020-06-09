@@ -566,6 +566,12 @@ class Batch(Data):
                     self._rl_oov_ids[i] = np.concatenate((self._rl_oov_ids[i][:original_mem_size], np.array(rl_oov_ids)))
                     self._rl_oov_sizes[i] = np.array(len(rl_oov_words))
                     self._rl_oov_words[i] = rl_oov_words
+                
+                if len(self._stories[i]) > args.memory_size:
+                    self._stories[i] = self._stories[i][::-1][:args.memory_size][::-1]
+                    self._story_sizes[i] = self._story_sizes[i][::-1][:args.memory_size][::-1]
+                    self._oov_ids[i] = self._oov_ids[i][::-1][:args.memory_size][::-1]
+                    if args.rl: self._rl_oov_ids[i] = self._rl_oov_ids[i][::-1][:args.memory_size][::-1]
         if results:
             self._recreate_answer_embeddings(glob, selected)
 

@@ -20,12 +20,6 @@ max_total_high_recall_queries = 0
 
 ## dstc2
 
-# set to babi, dstc2 or camrest
-dataset="camrest"
-# for babi, set the task
-task=3
-input_folder = "../../data-fscore/dialog-bAbI-tasks/"
-
 find_replace={}
 
 def populate_find_replace():
@@ -368,7 +362,7 @@ def convert_file(input_file, output_file, queryGenerator):
 	count = 1
 	total = len(corpus)
 	for dialog in corpus:
-		print(count,"/",total)
+		#print(count,"/",total)
 		count+=1
 		turns = dialog['turns']
 		for turn in turns:
@@ -376,12 +370,15 @@ def convert_file(input_file, output_file, queryGenerator):
 				input_entities = turn['entities_so_far']
 				output_entities = turn['next_entities']
 				high_recall_queries = queryGenerator.get_high_recall_queries(input_entities, output_entities, train_entities)
+				print(len(high_recall_queries))
+				'''
 				if len(high_recall_queries) > max_total_high_recall_queries:
 					max_total_high_recall_queries = len(high_recall_queries)
 					print('input_entities', input_entities)
 					print('output_entities', output_entities)
 					for high_recall_query in high_recall_queries:
 						print("\t", len(high_recall_queries), high_recall_query)
+				'''
 				turn['high_recall_queries']=high_recall_queries
 			else:
 				turn['high_recall_queries']=[]
@@ -472,46 +469,54 @@ def remove_dstc2_dialogs(input_file, output_file):
 
 if __name__ == "__main__":
 
-	files = ['trn.txt', 'tst.txt', 'dev.txt']
-	
-	if dataset=='babi':
-		files.append('tst-OOV.txt')
-		if task == 5:
-			input_prefix = 'dialog-babi-task5-full-dialogs-'
-			output_folder = input_folder + "task5/"
-			kb_file = input_folder+'dialog-babi-kb-all.txt'
-		else:
-			input_prefix_no_api = 'dialog-babi-task3-options-'
-			input_prefix =  'dialog-babi-task3-options-with-api-'
-			output_folder = input_folder + "task3/"
-			for file in files:
-				insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
-			kb_file = input_folder+'dialog-babi-kb-task3.txt'
-		output_prefix = 'dialog-babi-'
-		load_kb_entities(kb_file)
-	elif dataset=="dstc2":
-		populate_find_replace()
-		input_prefix_unfiltered = 'dialog-babi-task6-dstc2-'
-		input_prefix = 'dialog-babi-task6-dstc2-filtered-'
-		for file in files:
-			remove_dstc2_dialogs(input_folder+input_prefix_unfiltered+file, input_folder+input_prefix+file)
-		output_prefix = 'dialog-babi-task6-dstc2-'
-		output_folder = input_folder + "task6/"
-		kb_file = input_folder+'dialog-dstc2-kb-all.txt'
-		load_kb_entities(kb_file)
-	else:
-		populate_find_replace()
-		input_prefix = 'dialog-babi-task7-camrest676-'
-		output_prefix = 'dialog-camrest-'
-		output_folder = input_folder + "task7/"
-		kb_file = input_folder+'dialog-camrest-kb-all.txt'
-		load_kb_entities(kb_file)
-	
-	dbEngine = DbEngine(kb_file, "R_name")
-	queryGenerator = QueryGenerator(dbEngine, useOrderBy=False)
+	# set to babi, dstc2 or camrest
+	#datasets=["camrest", "dstc2"]
+	datasets=["dstc2"]
+	# for babi, set the task
+	input_folder = "../../data/dialog-bAbI-tasks/"
 
-	for file in files:
-		print("Processing", file)
-		convert_file(input_folder+input_prefix+file, output_folder+output_prefix+file.replace(".txt",".json"), queryGenerator)
-	
-	print("max high recall queries", max_total_high_recall_queries)
+	for dataset in datasets:
+		files = ['trn.txt', 'tst.txt', 'dev.txt']
+		'''
+		if dataset=='babi':
+			files.append('tst-OOV.txt')
+			if task == 5:
+				input_prefix = 'dialog-babi-task5-full-dialogs-'
+				output_folder = input_folder + "task5/"
+				kb_file = input_folder+'dialog-babi-kb-all.txt'
+			else:
+				input_prefix_no_api = 'dialog-babi-task3-options-'
+				input_prefix =  'dialog-babi-task3-options-with-api-'
+				output_folder = input_folder + "task3/"
+				for file in files:
+					insert_api_calls(input_folder+input_prefix_no_api+file, input_folder+input_prefix+file)
+				kb_file = input_folder+'dialog-babi-kb-task3.txt'
+			output_prefix = 'dialog-babi-'
+			load_kb_entities(kb_file)
+		'''
+		if dataset=="dstc2":
+			populate_find_replace()
+			input_prefix_unfiltered = 'dialog-babi-task6-dstc2-'
+			input_prefix = 'dialog-babi-task6-dstc2-filtered-'
+			for file in files:
+				remove_dstc2_dialogs(input_folder+input_prefix_unfiltered+file, input_folder+input_prefix+file)
+			output_prefix = 'dialog-babi-task6-dstc2-'
+			output_folder = input_folder + "task6/"
+			kb_file = input_folder+'dialog-dstc2-kb-all.txt'
+			load_kb_entities(kb_file)
+		else:
+			populate_find_replace()
+			input_prefix = 'dialog-babi-task7-camrest676-'
+			output_prefix = 'dialog-camrest-'
+			output_folder = input_folder + "task7/"
+			kb_file = input_folder+'dialog-camrest-kb-all.txt'
+			load_kb_entities(kb_file)
+		
+		dbEngine = DbEngine(kb_file, "R_name")
+		queryGenerator = QueryGenerator(dbEngine, useOrderBy=False)
+
+		for file in files:
+			print("Processing", dataset, file)
+			convert_file(input_folder+input_prefix+file, output_folder+output_prefix+file.replace(".txt",".json"), queryGenerator)
+		
+		print("max high recall queries in", dataset, "is", max_total_high_recall_queries)
