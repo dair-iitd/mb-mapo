@@ -140,6 +140,7 @@ if __name__ == "__main__":
 	folder = sys.argv[1]
 	print_count = False
 	print_perfect_ratios = False
+	print_validation_rewards = False
 	api_folder_prefix = ""
 	api_folder_suffix = ""
 	remote_machine = ""
@@ -148,8 +149,11 @@ if __name__ == "__main__":
 	if (len(sys.argv) > 3):
 		logs_path = sys.argv[2]
 		for i in range(3,len(sys.argv)):
-			if sys.argv[i] == "p":
-				print_perfect_ratios = True
+			if sys.argv[i] == "p" or sys.argv[i] == "v":
+				if sys.argv[i] == "v":
+					print_validation_rewards = True
+				else:
+					print_perfect_ratios = True
 				remote_machine = "scp diraghu1@dccxl012.pok.ibm.com:"
 				if "7" in folder:
 					api_folder_prefix = "/dccstor/dineshwcs/" + logs_path+ "/logs/api/task7_dialog-bAbI-tasks_lr-0.0005_hops-6_emb-size-256_sw-1_wd-0.1_pw-1.0_rlmode-" 
@@ -157,6 +161,7 @@ if __name__ == "__main__":
 				if "6" in folder:
 					api_folder_prefix = "/dccstor/dineshwcs/" + logs_path+ "/logs/api/task6_dialog-bAbI-tasks_lr-0.0025_hops-6_emb-size-256_sw-1_wd-0.1_pw-1.0_rlmode-" 
 					api_folder_suffix = "_pi_b-0.6"
+					
 			if sys.argv[i] == "c":
 				print_count = True
 
@@ -178,7 +183,7 @@ if __name__ == "__main__":
 				continue
 			numbers_map = process_file(folder + "/" + file)
 			for key, value in numbers_map.items():
-				if print_perfect_ratios and key == 'perfect_ratio':
+				if (print_perfect_ratios and key == 'perfect_ratio') or (print_validation_rewards and key == 'validation_rewards'):
 					print(file, "\t", value, "\tEpoch",numbers_map['best_test_epoch'])
 					epoch = numbers_map['best_test_epoch']
 
@@ -203,7 +208,7 @@ if __name__ == "__main__":
 					acc_numbers_map[key] = []
 				acc_numbers_map[key].append(value)
 		
-		if print_perfect_ratios:
+		if print_perfect_ratios or print_validation_rewards:
 			continue
 
 		metric_map = {}
@@ -225,7 +230,7 @@ if __name__ == "__main__":
 				metric_map[key] = "{0:0.2f}".format(mean)+"-"+"{0:0.2f}".format(sd)
 		modes_map[mode] = copy.deepcopy(metric_map)
 
-	if print_perfect_ratios:
+	if print_perfect_ratios or print_validation_rewards:
 		print(ssh_commands)
 		exit(0)
 

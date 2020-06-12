@@ -5,6 +5,21 @@ import itertools
 
 from operator import itemgetter
 
+####
+# Currently supports:
+#  1) SELECT - > * and combination of field names
+#  2) WHERE -> equality comparision and combining conditions with boolean AND
+#  3) ORDER BY -> only supports single variable
+#
+# To extend support 
+#   1) update the regex pattern (self._pattern) that checks if a query is valid 
+#   2) update the execute() method
+#   3) update the QueryGenerator
+####
+
+TABLE_NAME = "table"
+SELECT_ALL_CLAUSE = "SELECT * FROM " + TABLE_NAME + " "
+
 class DbEngine(object):
 
 	KEY_INDEX = 0
@@ -14,11 +29,12 @@ class DbEngine(object):
 
 	valid_queries = {}
 
-	def __init__(self, kb_file, key_field_name):
+	def __init__(self, kb_file, key_field_name, use_sql=False):
 		
 		self.kb_file = kb_file
 		self.key_field_name = key_field_name
-		
+		self._use_sql = use_sql
+
 		if 'babi' in kb_file:
 			self._data_set = "babi"
 			self._informable_field_names = ["R_cuisine","R_location","R_price","R_number"]
@@ -37,6 +53,9 @@ class DbEngine(object):
 		self._populate_field_name_to_index_map()
 		self._read_db()
 		self._build_index()
+
+		if use_sql:
+			self._build_regex()
 
 	@property
 	def fields(self):
@@ -73,8 +92,6 @@ class DbEngine(object):
 			self._field_name_to_index_map[field_name]=index
 			self.field_names[index] = field_name
 			index+=1
-		#print(self.field_names)
-		#sys.exit(0)
 
 	def _read_db(self):
 	
@@ -135,6 +152,30 @@ class DbEngine(object):
 				if rel not in self._informable_field_names:
 					self._requestable_to_informable_slots[value] = copy.deepcopy(self._requestable_to_informable_slots[key])
 
+	def _build_regex(self):
+
+		field_names = ""
+		for key,value in self._field_name_to_index_map.items():
+			if field_names == "":
+				field_names = "("+key
+			else:
+				field_names += "|"+key
+		field_names += ")"
+
+		select_clause_regex = "SELECT (\*|((" + field_names + ")( , " + field_names + ")*)) FROM " + TABLE_NAME
+		
+		where_condition_regex = field_names + ' = [^( |(AND))]*'
+		where_clause_regex = " WHERE " + where_condition_regex +  "( AND " + where_condition_regex + ")*"
+		
+		order_by_condition_regex = field_names + ' (ASC|DESC)'
+		order_by_clause_regex = " ORDER BY " + order_by_condition_regex
+		
+		self._pattern = re.compile(
+								select_clause_regex
+								+ where_clause_regex
+								+ "(" + order_by_clause_regex + ")*" # ORDER BY is optional
+							)
+
 	def is_entity_word(self, word):
 		if word in self._all_field_values:
 			return True
@@ -177,36 +218,43 @@ class DbEngine(object):
 
 	def is_query_valid(self, query):
 		
-		if not query.startswith("api_call "):
-			return False
-		
-		if query in DbEngine.valid_queries:
-			return DbEngine.valid_queries[query]
+		if self._use_sql:
+			if query in DbEngine.valid_queries:
+				return DbEngine.valid_queries[query]
 
-		words = query.strip().split()
-		
-		if (self._data_set == "babi" and len(words) == 5) or (self._data_set == "camrest" and len(words) == 4) or (self._data_set == "dstc2" and len(words) == 4):
-			'''
-			_, results, _ = self.execute(query)
-			if len(results) > 0:
+			result = self._pattern.search(query)
+			if result != None and result.end() - result.start() == len(query):
 				DbEngine.valid_queries[query] = True
 				return True
-			'''
+			else:
+				DbEngine.valid_queries[query] = False
+				return False
 
-			where_clauses = self.get_where_clauses_from_api_call(query)
-			for where_clause in where_clauses:
-				where_clause_split = where_clause.strip().split(" ")
-				field_name = where_clause_split[0].strip()
-				value = where_clause_split[1].strip()
-				if value not in self._inverted_index[field_name]:
-					DbEngine.valid_queries[query] = False
-					return False
+		else:
+			if not query.startswith("api_call "):
+				return False
 
-			DbEngine.valid_queries[query] = True
-			return True
+			if query in DbEngine.valid_queries:
+				return DbEngine.valid_queries[query]
 
-		DbEngine.valid_queries[query] = False
-		return False
+			words = query.strip().split()
+			
+			if (self._data_set == "babi" and len(words) == 5) or (self._data_set == "camrest" and len(words) == 4) or (self._data_set == "dstc2" and len(words) == 4):
+
+				where_clauses = self.get_where_clauses_from_api_call(query)
+				for where_clause in where_clauses:
+					where_clause_split = where_clause.strip().split(" ")
+					field_name = where_clause_split[0].strip()
+					value = where_clause_split[1].strip()
+					if value not in self._inverted_index[field_name]:
+						DbEngine.valid_queries[query] = False
+						return False
+
+				DbEngine.valid_queries[query] = True
+				return True
+
+			DbEngine.valid_queries[query] = False
+			return False
 		
 	def execute(self, query):
 
@@ -214,42 +262,104 @@ class DbEngine(object):
 		results = []
 		result_entities_set = set([])
 
-		try:
-			
-			record_set = None
-			where_clauses = self.get_where_clauses_from_api_call(query)
-			for where_clause in where_clauses:
-				where_clause_split = where_clause.strip().split(" ")
-				field_name = where_clause_split[0].strip()
-				value = where_clause_split[1].strip()
-
-				if field_name not in self._inverted_index:
-					return results, result_entities_set
-
-				if record_set == None:
-					if value in self._inverted_index[field_name]:
-						record_set = set(self._inverted_index[field_name][value])
-					else:
-						record_set = set([])
+		if self._use_sql:
+			try:
+				select_clause = query[(query.index("SELECT ") + len("SELECT ")):query.index(" FROM")]
+				where_index = query.index(" WHERE ")
+				if "ORDER BY" in query:
+					order_by_index = query.index(" ORDER BY ")
+					where_clauses = query[where_index + len(" WHERE "):order_by_index].split("AND")
 				else:
-					if value in self._inverted_index[field_name]:
-						record_set = record_set.intersection(self._inverted_index[field_name][value])
+					where_clauses = query[where_index + len(" WHERE "):].split("AND")
+
+				record_set = None			
+				for where_clause in where_clauses:
+					where_clause_split = where_clause.strip().split(" = ")
+					field_name = where_clause_split[0].strip()
+					value = where_clause_split[1].strip()
+
+					if field_name not in self._inverted_index:
+						return results, result_entities_set
+
+					if record_set == None:
+						if value in self._inverted_index[field_name]:
+							record_set = set(self._inverted_index[field_name][value])
+						else:
+							record_set = set([])
 					else:
-						record_set = record_set.intersection(set([]))
-						
-			if record_set != None:
-				for index in record_set:
-					results.append(self._db[index])
+						if value in self._inverted_index[field_name]:
+							record_set = record_set.intersection(self._inverted_index[field_name][value])
+						else:
+							record_set = record_set.intersection(set([]))
+							
+				if record_set != None:
+					for index in record_set:
+						results.append(self._db[index])
 
-			# the entities are computed after applying the select clause	
-			for result in results:
-				result_entities_set = result_entities_set.union(set(result))
+				# sorted it based on the ORDER BY clause
+				# for now only one variable condition is allowed
+				if "ORDER BY" in query:
+					order_by_clause = query[order_by_index+ len(" ORDER BY "):]
+					order_by_clause_split = order_by_clause.split(" ")
+					sort_index = self._field_name_to_index_map[order_by_clause_split[0]]
+					reverse_flag = False
+					if len(order_by_clause_split) == 2 and order_by_clause_split[1] == "DESC":
+						reverse_flag = True
+					results = sorted(results, key=itemgetter(sort_index),reverse=reverse_flag)
+				
+				if select_clause != "*":
+					select_applied_results = []
+					select_fields = select_clause.split(" , ")
+					select_field_indices = [self._field_name_to_index_map[field] for field in select_fields]
+					for result in results:
+						select_applied_results.append([result[i] for i in select_field_indices])
+					results = select_applied_results
 
-		except:
-			e = sys.exc_info()[0]
-			print( "ERROR: ", e )
-		finally:
-			return select_fields, results, result_entities_set 
+				# the entities are computed after applying the select clause	
+				for result in results:
+					result_entities_set = result_entities_set.union(set(result))
+
+			except:
+				e = sys.exc_info()[0]
+				print( "ERROR: sql execute ", e )
+			finally:
+				return select_fields, results, result_entities_set 
+		else:
+			try:
+				record_set = None
+				where_clauses = self.get_where_clauses_from_api_call(query)
+				for where_clause in where_clauses:
+					where_clause_split = where_clause.strip().split(" ")
+					field_name = where_clause_split[0].strip()
+					value = where_clause_split[1].strip()
+
+					if field_name not in self._inverted_index:
+						return results, result_entities_set
+
+					if record_set == None:
+						if value in self._inverted_index[field_name]:
+							record_set = set(self._inverted_index[field_name][value])
+						else:
+							record_set = set([])
+					else:
+						if value in self._inverted_index[field_name]:
+							record_set = record_set.intersection(self._inverted_index[field_name][value])
+						else:
+							record_set = record_set.intersection(set([]))
+							
+				if record_set != None:
+					for index in record_set:
+						results.append(self._db[index])
+
+				# the entities are computed after applying the select clause	
+				for result in results:
+					result_entities_set = result_entities_set.union(set(result))
+
+			except:
+				e = sys.exc_info()[0]
+				print( "ERROR: non sql execute", e )
+			finally:
+				return select_fields, results, result_entities_set 
 
 	def get_formatted_results(self, select_fields, results, clip=True):
 		formatted_results = []
@@ -386,6 +496,124 @@ class DbEngine(object):
 			sys.exit(1)
 		
 		return where_clauses
+	
+	def get_query_from_where_clauses(self, where_clauses):
+		if self._use_sql:
+			return self.get_sql_query_from_where_clauses(where_clauses)
+		else:
+			return self.get_api_call_from_where_clauses(where_clauses)
+
+	def convert_predicted_query_to_api_call_format (self, predicted_query):
+		if self._use_sql:
+			return self.get_sql_query_in_api_format(predicted_query.strip())
+		else:
+			return predicted_query.strip()
+	
+	def convert_gold_query_to_suitable_grammar(self, gold_query):
+		if self._use_sql:
+			return self.get_api_call_in_sql_query_format(gold_query.strip())
+		else:
+			return gold_query.strip()
+
+	def get_sql_query_from_where_clauses(self, where_clauses):
+		where_map = {}
+		for where_clause in where_clauses:
+			where_clause_split = where_clause.strip().split(" ")
+			field_name = where_clause_split[0].strip()
+			value = where_clause_split[1].strip()
+			where_map[field_name] = value
+		
+		query = SELECT_ALL_CLAUSE + "WHERE "
+		where_clauses = []
+		for key in sorted (where_map.keys()):
+			where_clauses.append(key + ' = ' + where_map[key])
+		query += " AND ".join(where_clauses)
+
+		return query
+     		 
+
+	def get_api_call_in_sql_query_format(self, api_call):
+
+		query = SELECT_ALL_CLAUSE + "WHERE "
+		where_clauses = []
+
+		if "camrest" in self.kb_file:
+			
+			api_call_arr = api_call.strip().split(" ") 
+			food = api_call_arr[1]
+			area = api_call_arr[2]
+			pricerange = api_call_arr[3]
+			if area != "dontcare": where_clauses.append('R_area = ' + area)
+			if food != "dontcare": where_clauses.append('R_food = ' + food)
+			if pricerange != "dontcare": where_clauses.append('R_pricerange = ' + pricerange)
+		
+		elif "dstc2" in self.kb_file:
+			
+			api_call_arr = api_call.strip().split(" ")
+			if api_call_arr[1] != "dontcare" and api_call_arr[1] != "R_cuisine": where_clauses.append('R_cuisine = ' + api_call_arr[1])
+			if api_call_arr[2] != "dontcare" and api_call_arr[2] != "R_location": where_clauses.append('R_location = ' + api_call_arr[2])
+			if api_call_arr[3] != "dontcare" and api_call_arr[3] != "R_price": where_clauses.append('R_price = ' + api_call_arr[3])
+
+		else:
+			
+			print("ERROR: Unknown KB File in DbEngine")
+			sys.exit(1)
+		
+		query += " AND ".join(where_clauses)
+
+		return query
+	
+	def get_sql_query_in_api_format(self, query):
+		
+		if not self.is_query_valid(query):
+			return ''
+		
+		where_index = query.index(" WHERE ")
+		if "ORDER BY" in query:
+			order_by_index = query.index(" ORDER BY ")
+			where_clauses = query[where_index + len(" WHERE "):order_by_index].split("AND")
+		else:
+			where_clauses = query[where_index + len(" WHERE "):].split("AND")
+		
+		where_map = {}
+		for where_clause in where_clauses:
+			#where_clause = where_clause.strip().replace("\"","")
+			where_clause_split = where_clause.strip().split(" = ")
+			field_name = where_clause_split[0].strip()
+			value = where_clause_split[1].strip()
+			where_map[field_name] = value
+		
+		if "camrest" in self.kb_file:
+			
+			# api_call dontcare east expensive
+
+			for key in where_map.keys():
+				if key != "R_area" and key != "R_food" and key != "R_pricerange":
+					return ""
+
+			area = where_map["R_area"] if "R_area" in where_map.keys() else "dontcare"
+			food  = where_map["R_food"] if "R_food" in where_map.keys() else "dontcare"
+			pricerange  = where_map["R_pricerange"] if "R_pricerange" in where_map.keys() else "dontcare"
+
+			api_call = "api_call " + food + " " + area + " " + pricerange 
+		
+		elif "dstc2" in self.kb_file:
+			
+			for key in where_map.keys():
+				if key != "R_cuisine" and key != "R_location" and key != "R_price":
+					return ""
+
+			cuisine = where_map["R_cuisine"] if "R_cuisine" in where_map.keys() else "dontcare"
+			location  = where_map["R_location"] if "R_location" in where_map.keys() else "dontcare"
+			price  = where_map["R_price"] if "R_price" in where_map.keys() else "dontcare"
+
+			api_call = "api_call " + cuisine + " " + location + " " + price
+				
+		else:
+			print("ERROR: Unknown KB File in DbEngine")
+			sys.exit(1)
+		
+		return api_call
 
 class QueryGenerator(object):
 
@@ -444,7 +672,6 @@ class QueryGenerator(object):
 							conditions.append(condition)
 
 					if not invalid_flag:
-						#print(conditions)
 						all_conditions.append(conditions)
 		
 		return all_conditions
@@ -475,7 +702,7 @@ class QueryGenerator(object):
 		where_clauses = self._get_conditions(modified_input_entities)
 		alreadyChecked = set([])
 		for where_clause in where_clauses:
-			query = self._dbObject.get_api_call_from_where_clauses(where_clause)
+			query = self._dbObject.get_query_from_where_clauses(where_clause)
 			if query in alreadyChecked:
 				continue
 			alreadyChecked.add(query)
@@ -500,56 +727,78 @@ class QueryGenerator(object):
 
 if __name__ == "__main__":
 
+	use_sql = True
 	
 	#kb_file="../data/dialog-bAbI-tasks/dialog-dstc2-kb-all.txt"
 	kb_file="../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt"
-	babi_db = DbEngine(kb_file, "R_name")
+	db_engine = DbEngine(kb_file, "R_name", use_sql=use_sql)
 
-	query = 'api_call dontcare1 south expensive'
 	
-	print("Is Query Valid: ", babi_db.is_query_valid(query))
+	if use_sql:
+		query = 'SELECT * FROM table WHERE R_area = centre AND R_food = turkish AND R_pricerange = expensive'
 	
-	if babi_db.is_query_valid(query):
-		select_fields, results, result_entities_set = babi_db.execute(query)
-		results = babi_db.get_formatted_results(select_fields, results)
-		print("")
-		for result in results:
-			print(result)
-		print("\n-----------------------\n")
+		print("Is Query Valid: ", db_engine.is_query_valid(query))
+		if db_engine.is_query_valid(query):
+			select_fields, results, result_entities_set = db_engine.execute(query)
+			results = db_engine.get_formatted_results(select_fields, results)
+			print("")
+			for result in results:
+				print(result)
+			print("\n-----------------------\n")
+		
+		babi_query_generator = QueryGenerator(db_engine, useOrderBy=False)
+		input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'expensive', 'centre', 'afghan', 'turkish', 'king_street_city_centre']
+		output_entities=['anatolia', 'moderate', '30_bridge_street_city_centre']
+		high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities, [])
 
-	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
-	input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'expensive', 'centre', 'afghan', 'turkish', 'king_street_city_centre']
-	output_entities=['anatolia', 'moderate', '30_bridge_street_city_centre']
-	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities, [])
+		for high_recall_query in high_recall_queries:
+			print(high_recall_query)
+	else:
+		query = 'api_call dontcare south expensive'
+		
+		print("Is Query Valid: ", db_engine.is_query_valid(query))
+		
+		if db_engine.is_query_valid(query):
+			select_fields, results, result_entities_set = db_engine.execute(query)
+			results = db_engine.get_formatted_results(select_fields, results)
+			print("")
+			for result in results:
+				print(result)
+			print("\n-----------------------\n")
 
-	for high_recall_query in high_recall_queries:
-		print(high_recall_query)
-	
-	'''
-	query = 'api_call dontcare west moderate'
-	
-	print("Is Query Valid: ", babi_db.is_query_valid(query))
-	
-	if babi_db.is_query_valid(query):
-		select_fields, results, result_entities_set = babi_db.execute(query)
-		results = babi_db.get_formatted_results(select_fields, results)
-		modified_results = babi_db.modify_non_informable_slots_results(results)
-		print("")
-		for result in modified_results:
-			print(result)
-		print("\n-----------------------\n")
-	'''
-	
-	#entities, informable_entities = babi_db.get_entities_in_utt("the dojo_noodle_bar serves asian_oriental food . they are located at 40210_millers_yard_city_centre and their phone number is 01223_363471 .")
-	#print(entities)
-	#print(informable_entities)
+		babi_query_generator = QueryGenerator(db_engine, useOrderBy=False)
+		input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'expensive', 'centre', 'afghan', 'turkish', 'king_street_city_centre']
+		output_entities=['anatolia', 'moderate', '30_bridge_street_city_centre']
+		high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities, [])
 
-	'''
-	babi_query_generator = QueryGenerator(babi_db, useOrderBy=False)
-	input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'italian', 'moderate', 'west', 'turkish', 'king_street_city_centre']
-	output_entities=['saint_johns_chop_house_post_code', 'prezzo_address']
-	high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities, train_entities)
+		for high_recall_query in high_recall_queries:
+			print(high_recall_query)
+		
+		'''
+		query = 'api_call dontcare west moderate'
+		
+		print("Is Query Valid: ", db_engine.is_query_valid(query))
+		
+		if db_engine.is_query_valid(query):
+			select_fields, results, result_entities_set = db_engine.execute(query)
+			results = db_engine.get_formatted_results(select_fields, results)
+			modified_results = db_engine.modify_non_informable_slots_results(results)
+			print("")
+			for result in modified_results:
+				print(result)
+			print("\n-----------------------\n")
+		'''
+		
+		#entities, informable_entities = db_engine.get_entities_in_utt("the dojo_noodle_bar serves asian_oriental food . they are located at 40210_millers_yard_city_centre and their phone number is 01223_363471 .")
+		#print(entities)
+		#print(informable_entities)
 
-	for high_recall_query in high_recall_queries:
-		print(high_recall_query)	
-	'''
+		'''
+		babi_query_generator = QueryGenerator(db_engine, useOrderBy=False)
+		input_entities=['mill_road_city_centre', 'bridge_street_city_centre', 'italian', 'moderate', 'west', 'turkish', 'king_street_city_centre']
+		output_entities=['saint_johns_chop_house_post_code', 'prezzo_address']
+		high_recall_queries = babi_query_generator.get_high_recall_queries(input_entities, output_entities, train_entities)
+
+		for high_recall_query in high_recall_queries:
+			print(high_recall_query)	
+		'''

@@ -26,6 +26,7 @@
 *.sql
 *.sqlite
 data/*
+tmp/*
 *model*
 *.json
 *.txt

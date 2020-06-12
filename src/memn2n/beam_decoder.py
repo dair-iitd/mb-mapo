@@ -691,6 +691,7 @@ class BeamSearchDecoder(decoder.Decoder):
           # vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
           vocab_dists = tf.multiply(vocab_dists, mask)
           vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
+          one_minus_fn = lambda x: 1 - x
           p_gens = tf.map_fn(one_minus_fn, p_gens)
         else:
           # vocab_dists = tf.Print(vocab_dists, [vocab_dists], '\nprinting vocab_dists', summarize=6)
@@ -749,7 +750,7 @@ class BeamSearchDecoder(decoder.Decoder):
           # vocab_dists_extended = tf.Print(vocab_dists_extended, [vocab_dists_extended], '\nprinting vocab_dists_extended', summarize=6)
 
           # attn_dists_projected = tf.Print(attn_dists_projected, [attn_dists_projected], '\nprinting attn_dists_projected', summarize=70)
-
+          
           final_dists = math_ops.add(vocab_dists_extended, attn_dists_projected)
           final_dists = tf.reshape(final_dists, [static_batch_size, self._beam_width, extended_vsize])
           # final_dists = tf.Print(final_dists, [final_dists], 'printing final_dists', summarize=1000)
@@ -758,7 +759,7 @@ class BeamSearchDecoder(decoder.Decoder):
           # final_dists = tf.concat([tf.zeros_like(first_part), final_dists[:,:,1:]], 2)
           final_dists = tf.reshape(final_dists, [batch_size, extended_vsize])
           # final_dists = tf.Print(final_dists, [final_dists[0, :6]], '\nprinting final_dists', summarize=6)
-
+          
         return final_dists, vocab_dists_extended, next_state_ids
 
   def step(self, time, prev_ids, state_ids, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size, rl, name=None):

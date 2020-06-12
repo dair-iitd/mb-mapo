@@ -116,6 +116,7 @@ class MemN2NGeneratorDialog(object):
 		if self._rl:
 			## Predicting ##
 			self.rl_predict_op = self._decoder_predict_rl(encoder_states_rl, line_memory, word_memory)
+			self.rl_predict_no_bs_op = self._decoder_predict_rl_without_beam_search(encoder_states_rl, line_memory, word_memory)
 
 			## Training ##
 			self.rl_loss_op, rl_logits, rl_p_gens = self._decoder_train_rl(encoder_states_rl, line_memory, word_memory)
@@ -520,6 +521,47 @@ class MemN2NGeneratorDialog(object):
 					return outputs.sample_id, predicted_lengths_to_return
 					# return tf.argmax(outputs.rnn_output, axis=-1), predicted_lengths_to_return
 
+	def _decoder_predict_rl_without_beam_search(self, encoder_states, line_memory, word_memory=None):
+		'''
+			Arguments:
+				encoder_states 	-	batch_size x embedding_size
+				line_memory 	-	batch_size x memory_size x embedding_size
+				word_memory 	- 	batch_size x memory_size x sentence_size x embedding_size
+			Outputs:
+
+		'''
+		with tf.variable_scope(self._name):
+			with tf.variable_scope('rl_decoder', reuse=True):
+
+				batch_size = tf.shape(self._stories)[0]
+				
+				# predict lengths based on the context
+				if self._fixed_length_decode:
+					# encoder_states: batch_size x embedding_size
+					# self.action_length_ff_layer: embedding_size x rl_length_classes
+					# predicted_length_logits: batch_size x rl_length_classes
+					predicted_length_logits = tf.matmul(encoder_states, self.action_length_ff_layer)
+					# length_dist: batch_size x rl_length_classes
+					length_dist = tf.nn.softmax(predicted_length_logits)
+					# predicted_length_ids: batch_size x 1
+					predicted_length_ids = tf.argmax(length_dist, axis=-1)
+					# predicted_lengths: batch_size
+					predicted_lengths = tf.gather(self._rl_decode_length_lookup_array,predicted_length_ids,axis=0)
+					
+					# predicted_lengths_to_return: batch_size x 1
+					predicted_lengths_to_return = tf.reshape(predicted_lengths, [batch_size, 1])
+				else:
+					predicted_lengths = None
+					predicted_lengths_to_return = tf.zeros([batch_size, 1], tf.int32)
+
+				if self._fixed_length_decode:
+					helper = FixedLengthGreedyEmbeddingHelper(self.C, tf.fill([batch_size], self.GO_SYMBOL), predicted_lengths)
+				else:
+					helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
+				decoder = self._get_rl_decoder(encoder_states, line_memory, word_memory, helper, batch_size, predict_flag=True)
+				outputs,_ = dynamic_decode(decoder, batch_size, self._rl_vocab_size, self._rl_oov_sizes, self._rl_oov_ids, rl=True, maximum_iterations=2*self._candidate_sentence_size)
+				return outputs.sample_id, predicted_lengths_to_return
+
 	def _decoder_train_rl(self, encoder_states, line_memory, word_memory=None):
 		'''
 			Arguments:
@@ -564,7 +606,7 @@ class MemN2NGeneratorDialog(object):
 					length_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=rl_decode_length_class_ids, logits=predicted_length_logits)
 					reinforce_loss = tf.reduce_sum(seq_loss_comp * self._rl_rewards) + tf.reduce_sum(length_loss * self._rl_rewards)
 				else:
-					if self._rl_mode == "GT" or self._rl_mode == "GREEDY":
+					if self._rl_mode == "GT" or self._rl_mode == "GREEDY" or self._rl_mode == "SL":
 						reinforce_loss = tf.reduce_sum(seq_loss_comp)
 					else:
 						reinforce_loss = tf.reduce_sum(seq_loss_comp * self._rl_rewards)
@@ -694,6 +736,7 @@ class MemN2NGeneratorDialog(object):
 					feed_dict[self._rl_decode_length_class_ids] = np.array(actions_and_rewards.rl_decode_length_class_ids)
 		else:
 			feed_dict[self._keep_prob] = 1.0	
+		#self._debug = True
 		if self._debug:
 			self._print_feed(feed_dict, actions_and_rewards, train)
 		return feed_dict
@@ -725,10 +768,15 @@ class MemN2NGeneratorDialog(object):
 		"""
 		feed_dict = self._make_feed_dict(batch, train=False)
 		return self._sess.run(self.rl_predict_op, feed_dict=feed_dict)
+	
+	def api_predict_no_bs(self, batch):
+		feed_dict = self._make_feed_dict(batch, train=False)
+		return self._sess.run(self.rl_predict_no_bs_op, feed_dict=feed_dict)
+		
 
 	def api_fit(self, batch, actions_and_rewards):
 		"""
-			Runs the REINFORCE algorithm over the passed batch
+			Runs the RL algorithm over the passed batch
 		"""
 		feed_dict = self._make_feed_dict(batch, actions_and_rewards=actions_and_rewards)
 		loss, _ = self._sess.run([self.rl_loss_op, self.rl_train_op], feed_dict=feed_dict)
@@ -736,7 +784,7 @@ class MemN2NGeneratorDialog(object):
 
 	def api_prob(self, batch, actions_and_rewards):
 		"""
-			Runs the REINFORCE algorithm over the passed batch
+			Runs the RL algorithm over the passed batch
 		"""
 		feed_dict = self._make_feed_dict(batch, actions_and_rewards=actions_and_rewards)
 		return self._sess.run(self.prob_op, feed_dict=feed_dict)

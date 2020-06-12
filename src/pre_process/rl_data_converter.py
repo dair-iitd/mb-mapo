@@ -470,10 +470,10 @@ def remove_dstc2_dialogs(input_file, output_file):
 if __name__ == "__main__":
 
 	# set to babi, dstc2 or camrest
-	#datasets=["camrest", "dstc2"]
-	datasets=["dstc2"]
+	datasets=["camrest", "dstc2"]
+	#datasets=["dstc2"]
 	# for babi, set the task
-	input_folder = "../../data/dialog-bAbI-tasks/"
+	input_folder = "../../data-sql/dialog-bAbI-tasks/"
 
 	for dataset in datasets:
 		files = ['trn.txt', 'tst.txt', 'dev.txt']
@@ -512,7 +512,7 @@ if __name__ == "__main__":
 			kb_file = input_folder+'dialog-camrest-kb-all.txt'
 			load_kb_entities(kb_file)
 		
-		dbEngine = DbEngine(kb_file, "R_name")
+		dbEngine = DbEngine(kb_file, "R_name", use_sql=True)
 		queryGenerator = QueryGenerator(dbEngine, useOrderBy=False)
 
 		for file in files:

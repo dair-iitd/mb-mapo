@@ -59,11 +59,11 @@ class chatBot(object):
 		
 		# 2) Build RL Vocab for RL-Decoder
 		if args.rl:
-			self.db_engine = DbEngine(args.kb_file, "R_name")
+			self.db_engine = DbEngine(args.kb_file, "R_name", use_sql=args.use_sql_grammar)
 			self.RLtrainData, self.RLtestData, self.RLvalData, self.RLtestOOVData = load_RL_data(args)
 			if args.fixed_length_decode:
 				glob['rl_decode_length_vs_index'], glob['rl_decode_length_lookup_array'] = get_rl_decode_length_vs_index(self.RLtrainData, self.RLvalData)
-			glob['rl_idx'], glob['idx_rl'], glob['fields'], glob['rl_vocab_size'], glob['constraint_mask'], glob['state_mask'] = get_rl_vocab(self.db_engine, args.data_dir, args.task_id)
+			glob['rl_idx'], glob['idx_rl'], glob['fields'], glob['rl_vocab_size'], glob['constraint_mask'], glob['state_mask'] = get_rl_vocab(self.db_engine, args.data_dir, args.task_id, args.use_sql_grammar, args.constraint)
 			print("RL Vocab Size : {}".format(glob['rl_vocab_size'])); sys.stdout.flush()
 		else:
 			self.RLtrainData = self.RLtestData = self.RLvalData = self.RLtestOOVData = None
@@ -491,15 +491,17 @@ class chatBot(object):
 				pred_action_lengths = None
 			else:
 				if args.beam:
+					#if train:
 					parent_ids, predict_ids = self.model.api_predict(batch_entry)
-					# print(parent_ids)
-					# print(predict_ids)
 					actions = calculate_beam_result(parent_ids, predict_ids, args.max_api_length)
 					pred_action_lengths = None
 					#for batch_index, action_set in enumerate(actions):
 						# print()
 						# self.surface_form(batch_entry, parent_ids[batch_index], predict_ids[batch_index], action_set, batch_index)
 					# sys.exit()
+					#else:
+					#	preds, pred_action_lengths = self.model.api_predict_no_bs(batch_entry)
+					#	actions = pad_to_answer_size(list(preds), args.max_api_length, True)
 				else:
 					preds, pred_action_lengths = self.model.api_predict(batch_entry)
 					actions = pad_to_answer_size(list(preds), args.max_api_length, True)

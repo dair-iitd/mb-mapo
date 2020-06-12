@@ -89,7 +89,7 @@ def modify_dialog_json(dialog):
 if __name__ == "__main__":
     
     taskids = [7,6]
-    folder = "data"
+    folder = "data-sql"
     #folder = "data-heuristic-predicted"
     
     for taskid in taskids:
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         if taskid == 7:
             input_folder = "../../"+folder+ "/dialog-bAbI-tasks/"
             tst_files = input_folder+'dialog-babi-task7-camrest676-tst-modified.txt'
-            if folder == "data":
+            if folder == "data" or folder == "data-sql":
                 json_file = input_folder+'task7/dialog-camrest-tst.json'
             else:
                 json_file = input_folder+'task7/dialog-camrest-tst-modified.json'
@@ -106,7 +106,7 @@ if __name__ == "__main__":
         elif taskid == 6:
             input_folder = "../../"+folder+ "/dialog-bAbI-tasks/"
             tst_files = input_folder+'dialog-babi-task6-dstc2-filtered-tst-modified.txt'
-            if folder == "data":
+            if folder == "data" or folder == "data-sql":
                 json_file = input_folder+'task6/dialog-babi-task6-dstc2-tst.json'
             else:
                 json_file = input_folder+'task6/dialog-babi-task6-dstc2-filtered-tst-modified.json'

@@ -182,6 +182,7 @@ class BasicDecoder(Decoder):
 					# vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
 					vocab_dists = tf.multiply(vocab_dists, mask)
 					vocab_dists = tf.reshape(vocab_dists, [batch_size, decoder_vocab_size_n])
+					one_minus_fn = lambda x: 1 - x
 					p_gens = tf.map_fn(one_minus_fn, p_gens)
 
 				# raise ValueError("Expected memory to have fully defined inner dims, "
@@ -454,7 +455,7 @@ def dynamic_decode(decoder,
 			
 			# next_p_gens = tf.Print(next_p_gens, [next_p_gens], 'printing next_p_gens', summarize=1000)
 			# next_inputs = tf.Print(next_inputs, [next_inputs], 'printing next_inputs', summarize=1000)
-			next_ids = tf.Print(next_ids, [next_ids], 'printing next_ids', summarize=1000)
+			# next_ids = tf.Print(next_ids, [next_ids], 'printing next_ids', summarize=1000)
 
 			next_finished = math_ops.logical_or(decoder_finished, finished)
 			if maximum_iterations is not None:

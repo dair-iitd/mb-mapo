@@ -12,6 +12,7 @@ import numpy as np
 import tensorflow as tf
 from string import punctuation
 from sklearn.metrics import f1_score
+import pprint
 
 __all__ =  ["get_decoder_vocab", 
             "load_dialog_task", 
@@ -293,13 +294,19 @@ def load_api_calls_from_file(args, dbEngine):
         oov_data = None        
     return train_data, test_data, val_data, oov_data
 
-def get_rl_vocab(db_engine, data_dir, task_id):
+def get_rl_vocab(db_engine, data_dir, task_id, use_sql_grammar, constraint):
     '''
         Get RL vocabulary from the Processes Train data
     '''
     fields = db_engine.fields
     
-    vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
+    if use_sql_grammar:
+        fields.sort()
+        vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', "SELECT", "*", "FROM", "table", "WHERE", "=", "AND"] + fields
+    else:
+        vocab = ['PAD', 'UNK', 'GO_SYMBOL', 'EOS', 'api_call', 'dontcare']
+        constraint = False
+    
     '''
     rl_folder = data_dir + "task{}".format(task_id)
     files = os.listdir(rl_folder)
@@ -323,63 +330,28 @@ def get_rl_vocab(db_engine, data_dir, task_id):
     rl_idx_word = {v: k for k, v in rl_word_idx.items()}
     rl_vocab_size = len(rl_word_idx)
 
-    '''
-    # MASK_FILE = 'masks.json'
-    # TSV_FILE = 'transitions.tsv'
+    if constraint:
+        obj = ConstraintsGenerator()
+        masks_map, transistions = obj.construct_grammer(fields)
 
-    obj = ConstraintsGenerator()
-    constraints_map, transistions = obj.construct_grammer(fields)
+        masks_size = len(masks_map)+1
+        constraint_mask = np.zeros((masks_size, rl_vocab_size))
 
-    # print(constraints_map)
-    # print(transistions)
+        for mask_id, allowed_words in masks_map.items():
+            for allowed_word in allowed_words:
+                word_id = rl_word_idx[allowed_word]
+                constraint_mask[mask_id][word_id] = 1
 
-    # print(fields)
+        state_mask = np.zeros((masks_size, rl_vocab_size))
+        
+        for start_state, input_symbol_next_state_pairs in transistions.items():
+            for input_symbol, next_state  in input_symbol_next_state_pairs.items():
+                input_symbol_id = rl_word_idx[input_symbol]
+                state_mask[start_state][input_symbol_id] = next_state
 
-    # with open(MASK_FILE, 'r') as file:
-    #     constraints_map = json.load(file)
-
-    constraint_size = len(constraints_map)
-    constraint_mask = np.zeros((constraint_size, rl_vocab_size))
-
-    for key in constraints_map:
-        constraints = constraints_map[key]
-        for constraint in constraints:
-            c_id = rl_word_idx[constraint]
-            constraint_mask[key-1][c_id] = 1
-
-    # print(constraint_mask)
-    # sys.exit()
-
-    state_mask = np.zeros((constraint_size, rl_vocab_size))
-    # with open(TSV_FILE, 'r') as file:
-    #     for line in file.readlines():
-    #         vals = line.strip().split('\t')
-    #         start_id = int(vals[0]) - 1
-    #         end_id = int(vals[2]) - 1
-    #         input_id = rl_word_idx[vals[1]]
-    #         state_mask[start_id][input_id] = end_id
-
-    for key in transistions:
-        for word in transistions[key]:
-            input_id = rl_word_idx[word]
-            # if word == 'UNK': print('UNK', key, transistions[key][word])
-            if word == '"':
-                idx = transistions[key][word]
-                # if constraints_map[idx] == ['UNK']:
-                #     print('state = ', idx)
-                #     print(constraint_mask[idx-1])
-                # print(constraints_map[idx])
-            state_mask[key-1][input_id] = transistions[key][word] - 1
-
-    # print(state_mask)
-
-    # print(constraint_mask[:, 1])
-    # print(state_mask[:, 1])
-
-    # print(rl_word_idx)
-    '''
-    constraint_mask = {}
-    state_mask = {}
+    else:
+        constraint_mask = {}
+        state_mask = {}
     
     return rl_word_idx, rl_idx_word, fields, rl_vocab_size, constraint_mask, state_mask
 
