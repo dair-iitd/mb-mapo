@@ -107,7 +107,7 @@ def process_file(file):
 		#numbers_map['test_f1_1'] = (2*test_f1_metrics[0][0]*test_f1_metrics[0][1])/(test_f1_metrics[0][0]+test_f1_metrics[0][1]) if test_f1_metrics[0][1]+test_f1_metrics[0][0] > 0 else 0
 
 		numbers_map['test_context_pr'] = test_f1_metrics[1][0]
-		numbers_map['testre'] = test_f1_metrics[1][1]
+		numbers_map['test_context_re'] = test_f1_metrics[1][1]
 		numbers_map['test_context_f1'] = test_f1_metrics[1][2]
 		#numbers_map['test_context_f1_1'] = (2*test_f1_metrics[1][0]*test_f1_metrics[1][1])/(test_f1_metrics[1][0]+test_f1_metrics[1][1]) if test_f1_metrics[1][1]+test_f1_metrics[1][0] > 0 else 0
 
@@ -141,6 +141,7 @@ if __name__ == "__main__":
 	print_count = False
 	print_perfect_ratios = False
 	print_validation_rewards = False
+	print_path = True
 	api_folder_prefix = ""
 	api_folder_suffix = ""
 	remote_machine = ""
@@ -149,6 +150,8 @@ if __name__ == "__main__":
 	if (len(sys.argv) > 3):
 		logs_path = sys.argv[2]
 		for i in range(3,len(sys.argv)):
+			if sys.argv[i] == "dp":
+				print_path = False
 			if sys.argv[i] == "p" or sys.argv[i] == "v":
 				if sys.argv[i] == "v":
 					print_validation_rewards = True
@@ -156,10 +159,10 @@ if __name__ == "__main__":
 					print_perfect_ratios = True
 				remote_machine = "scp diraghu1@dccxl012.pok.ibm.com:"
 				if "7" in folder:
-					api_folder_prefix = "/dccstor/dineshwcs/" + logs_path+ "/logs/api/task7_dialog-bAbI-tasks_lr-0.0005_hops-6_emb-size-256_sw-1_wd-0.1_pw-1.0_rlmode-" 
+					api_folder_prefix = "/dccstor/dineshwcs/" + logs_path+ "/logs/api/task7_dialog-bAbI-tasks_lr-0.0005_hops-1_emb-size-256_sw-1_wd-0.1_pw-1.0_rlmode-" 
 					api_folder_suffix = "_pi_b-0.6"
 				if "6" in folder:
-					api_folder_prefix = "/dccstor/dineshwcs/" + logs_path+ "/logs/api/task6_dialog-bAbI-tasks_lr-0.0025_hops-6_emb-size-256_sw-1_wd-0.1_pw-1.0_rlmode-" 
+					api_folder_prefix = "/dccstor/dineshwcs/" + logs_path+ "/logs/api/task6_dialog-bAbI-tasks_lr-0.0025_hops-1_emb-size-256_sw-1_wd-0.1_pw-1.0_rlmode-" 
 					api_folder_suffix = "_pi_b-0.6"
 					
 			if sys.argv[i] == "c":
@@ -231,7 +234,8 @@ if __name__ == "__main__":
 		modes_map[mode] = copy.deepcopy(metric_map)
 
 	if print_perfect_ratios or print_validation_rewards:
-		print(ssh_commands)
+		if print_path:
+			print(ssh_commands)
 		exit(0)
 
 	tabulate_list = []

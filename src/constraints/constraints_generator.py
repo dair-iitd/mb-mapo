@@ -6,7 +6,7 @@ class ConstraintsGenerator:
 	TRANSITIONS_FILEPATH = "transitions.tsv"
 	MASKS_FILEPATH = "masks.json"
 
-	def construct_grammer(self, fields, fixed_length_decode=False, serialize=False, includeEqualTo=True):
+	def construct_restricted_grammer(self, fields, fixed_length_decode=False, serialize=False, includeEqualTo=True):
 		
 		fields.sort()
 		
@@ -137,6 +137,73 @@ class ConstraintsGenerator:
 		
 		return self._state_to_surface_forms, self._transition_rules
 
+	def construct_grammer(self, fields, fixed_length_decode=False, serialize=False, includeEqualTo=True):
+		
+		# construct masks for select clause
+		masks = {}
+		masks[1] = ["SELECT"]
+		#masks[2] = ["*"] + fields
+		masks[2] = ["*"]
+		masks[3] = ["FROM"]
+		#for i in range(len(fields)-1):
+		#	masks[len(masks)+1] = [",","FROM"]
+		#	masks[len(masks)+1] = fields[i+1:]
+		table_mask = len(masks)+1
+		masks[len(masks)+1] = ["table"]
+		
+		where_mask = len(masks)+1
+		masks[len(masks)+1] = ["WHERE"]
+		
+		masks[len(masks)+1] = fields
+			
+		if includeEqualTo:
+			masks[len(masks)+1] = ["="]
+			#masks[len(masks)+1] = ["\""]
+			masks[len(masks)+1] = ["UNK"]
+			#masks[len(masks)+1] = ["\""]
+		else:
+			masks[len(masks)+1] = ["UNK"]
+			
+		masks[len(masks)+1] = ["EOS", "AND"]
+		masks[len(masks)+1] = ["EOS"]
+		eos_mask = len(masks)
+		
+		self._state_to_surface_forms = masks
+		
+		if serialize:
+			self.serialize_masks()
+
+		self._transition_rules = {}
+		for i in range(len(masks)+1):
+			self._transition_rules[i]={}
+		
+		self._transition_rules[0]["GO_SYMBOL"] = 1
+		self._transition_rules[1]["SELECT"] = 2
+		self._transition_rules[2]["*"] = 3
+		self._transition_rules[3]["FROM"] = table_mask
+		
+		self._transition_rules[table_mask]["table"] = where_mask
+
+		self._transition_rules[where_mask]["WHERE"] = where_mask+1
+		
+		for field in fields:
+			self._transition_rules[where_mask+1][field] = where_mask+2
+
+		if includeEqualTo:
+			self._transition_rules[where_mask+2]["="] = where_mask+3
+			self._transition_rules[where_mask+3]["UNK"] = where_mask+4
+			self._transition_rules[where_mask+4]["AND"] = where_mask+1
+			self._transition_rules[where_mask+4]["EOS"] = eos_mask
+		else:
+			self._transition_rules[where_mask+2]["UNK"] = where_mask+3
+			self._transition_rules[where_mask+3]["AND"] = where_mask+1
+			self._transition_rules[where_mask+3]["EOS"] = eos_mask
+			
+		if serialize:
+			self.serialize_transitions()
+		
+		return self._state_to_surface_forms, self._transition_rules
+
 	def serialize_masks(self):
 		with open(ConstraintsGenerator.MASKS_FILEPATH, 'w') as mask_file:
 			json.dump(self._state_to_surface_forms, mask_file)
@@ -166,13 +233,15 @@ class ConstraintsGenerator:
 		query = ""
 		surface_forms = self._state_to_surface_forms[state]
 		word = random.choice(surface_forms)
-		for i in range(25):
+		for i in range(50):
 			if word == "EOS":
 				break
 			query += " " + word
 			state = self._transition_rules[state][word]
 			surface_forms = self._state_to_surface_forms[state]
 			word = random.choice(surface_forms)
+		if i == 49:
+			query += " TRUNC"
 		return query.strip()
 
 if __name__ == "__main__":

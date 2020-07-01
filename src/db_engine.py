@@ -566,7 +566,14 @@ class DbEngine(object):
 	def get_sql_query_in_api_format(self, query):
 		
 		if not self.is_query_valid(query):
-			return ''
+			if "AND" in query:
+				last_and_index = query.rindex("AND")
+				if last_and_index > 0:
+					trunc_Q = query[:last_and_index].strip()
+					if not self.is_query_valid(trunc_Q):
+						return ''
+			else:
+				return ''
 		
 		where_index = query.index(" WHERE ")
 		if "ORDER BY" in query:

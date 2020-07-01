@@ -9,10 +9,10 @@ flags.DEFINE_integer("memory_size", 200, "Maximum size of memory.")
 flags.DEFINE_integer("epochs", 600, "Number of epochs to train for.")
 
 # Model Params
-flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
-flags.DEFINE_integer("batch_size", 8, "Batch size for training.")
+flags.DEFINE_float("learning_rate", 0.005, "Learning rate for Adam Optimizer.")
+flags.DEFINE_integer("batch_size", 64, "Batch size for training.")
 flags.DEFINE_integer("hops", 1, "Number of hops in the Memory Network.")
-flags.DEFINE_integer("embedding_size", 256, "Embedding size for embedding matrices.")
+flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
 flags.DEFINE_integer("beam_width", 1, "Width of Beam for BeamSearchDecoder")
 flags.DEFINE_integer("phase", 1, "Start Phase for RL training")
@@ -35,7 +35,7 @@ flags.DEFINE_boolean("constraint", True, "if True, perform constraint decoding, 
 
 # RL Params
 flags.DEFINE_boolean("rl", True, 'if True, uses RL decoder')
-flags.DEFINE_string("rl_mode", "HYBRID", 'takes the following values: GT, GREEDY, MAPO, HYBRID')
+flags.DEFINE_string("rl_mode", "SL", 'takes the following values: GT, GREEDY, MAPO, HYBRID')
 flags.DEFINE_boolean("fixed_length_decode", False, 'sample length of action before decoding the action')
 flags.DEFINE_integer("max_api_length", 20, "Set the value based on DBEngine and QueryGenerator")
 flags.DEFINE_boolean("split_emb", True, "Use separate embedding for RL encoder")

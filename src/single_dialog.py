@@ -149,7 +149,7 @@ class chatBot(object):
 		else:
 			best_validation_accuracy = 0
 
-		if args.load_api_from_file:
+		if args.load_api_from_file and args.rl_mode != 'RL':
 			train_db_results_map, test_db_results_map, valid_db_results_map, test_oov_db_results_map = load_api_calls_from_file(args, self.db_engine)
 			for id, db_results in train_db_results_map.items():
 				Data_train.responses[id] = db_results
@@ -164,7 +164,6 @@ class chatBot(object):
 				for id, db_results in test_oov_db_results_map.items():
 					modified_db_results = self.db_engine.modify_non_informable_slots_results(db_results)
 					Data_test_OOV.responses[id] = modified_db_results
-
 
 		# Train Model in Batch Mode
 		loss_buffer = deque()
@@ -468,7 +467,7 @@ class chatBot(object):
 				os.mkdir(dirName)
 			file = open(dirName + '/'+ epoch_str +'.log', 'w+')
 
-		if train: np.random.shuffle(batches)
+		#if train: np.random.shuffle(batches)
 		total_cost = 0.0
 		total_reward = 0.0
 		total_entries_sum = 0.0

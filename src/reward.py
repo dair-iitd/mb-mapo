@@ -186,25 +186,32 @@ def queries_to_actions_and_rewards(queries, rl_idx, max_api_length, rl_oov_word_
 	all_rewards = []
 	best_reward = 0
 	best_query = ""
-	if mode == "HYBRID" or mode == "HYBRIDCA" or mode == "HYBRIDUR":
+	if mode == "HYBRID" or mode == "HYBRIDCA" or mode == "HYBRIDUR" or mode == "MAPOUR":
 		for index, query in enumerate(queries):
 			reward = get_reward_for_query(query, cache_key_prefix, db_engine, next_entities_in_dialog)
+			#print(query, reward)
 			#print(reward, query)
 			all_rewards.append(reward)
 			if reward > best_reward:
 				best_reward = reward
 				best_query = query
+	#print("-----")
 	#if best_query != "":
 	#	print(best_query)
 	#print("======")
 
 	for index, query in enumerate(queries):
 		#print(query)
-		if mode == "MAPO" or ((mode == "HYBRID" or mode == "HYBRIDCA" or mode == "HYBRIDUR") and all_rewards[index] == best_reward):
+		if mode == "MAPO" or mode == "MAPOUR" or ((mode == "HYBRID" or mode == "HYBRIDCA" or mode == "HYBRIDUR") and all_rewards[index] == best_reward):
 			if (mode == "HYBRID" or mode == "HYBRIDCA" or mode == "HYBRIDUR") and cache_key_prefix not in ActionsAndRewards.MIL_Cache:
 				ActionsAndRewards.MIL_Cache[cache_key_prefix] = best_reward
 			filtered_queries.append(query)
 			action, action_emb, action_size, reward = get_action_from_query(query, rl_idx, max_api_length, rl_oov_word_list, total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog)
+			if mode == "MAPOUR" and best_reward > 0:
+				print(reward[0])
+				reward[0] = reward[0]/best_reward
+				print(reward[0])
+				
 			buffer_actions_and_rewards.add_entry(np.array(action), np.array(action_emb), np.array([action_size[0]]), np.array([float(reward[0])]))
 	#print("---------")
 
@@ -405,7 +412,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 	
 	if mode == "HYBRID" or mode == "HYBRIDCA" or mode == "HYBRIDUR":
 		total_width = 2
-	elif mode == "MAPO":
+	elif mode == "MAPO" or mode == "MAPOUR" or mode == "SL":
 		total_width = 2
 	else: # for GT, GREEDY, SL and REINFORCE (RL)
 		total_width = 1
@@ -442,11 +449,11 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 		# 3. GT: push the gt into batched_actions_and_rewards
 		if len(high_recall_queries) > 0:
 
-			if mode == "HYBRID" or mode == "MAPO" or mode == "HYBRIDCA" or mode == "HYBRIDUR":
+			if mode == "HYBRID" or mode == "MAPO" or mode == "HYBRIDCA" or mode == "HYBRIDUR" or mode == "MAPOUR":
 				
 				# compute prob for all high recall queries in the Buffer
 				filtered_queries, high_recall_actions_and_rewards = queries_to_actions_and_rewards(high_recall_queries, glob['rl_idx'], max_api_length, rl_oov_words[batch_index], total_rl_words, cache_key_prefix, db_engine, next_entities_in_dialog, mode)
-				
+
 				buffer_log_probs = []
 
 				no_of_high_recall_actions = high_recall_actions_and_rewards.get_length()
@@ -470,7 +477,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				buffer_probs = np.exp(buffer_log_probs)
 				sum_buffer_probs = np.sum(buffer_probs)
 
-				if mode == "MAPO":
+				if mode == "MAPO" or mode == "MAPOUR":
 					
 					unclipped_mapo_pi_b = sum_buffer_probs
 
@@ -499,11 +506,18 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 
 					normalized_buffer_prob = softmax(buffer_probs)
 					sample = sample_from_prob_dist(normalized_buffer_prob, [])
+					#for i in range(len(normalized_buffer_prob)):
+					#	print(normalized_buffer_prob[i], "\t", filtered_queries[i])
+					#print("------")
+					#print(epoch_str, dialog_id, filtered_queries[sample])
+					#print("===============")
 
 					action, action_emb_lookup, action_size, reward = high_recall_actions_and_rewards.get(sample)
 					total_high_recall_actions_rewards+= reward[0]
-					
+					#print(reward[0])
 					reward[0] *= mapo_pi_b
+					#print(reward[0])
+					#print("----")
 
 					batched_actions_and_rewards[0].add_entry(
 						copy.deepcopy(action), copy.deepcopy(action_emb_lookup), copy.deepcopy(action_size), copy.deepcopy(reward))
@@ -517,7 +531,12 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					
 					normalized_buffer_prob = softmax(buffer_probs)
 					sample = sample_from_prob_dist(normalized_buffer_prob, [])
-
+					#for i in range(len(normalized_buffer_prob)):
+					#	print(normalized_buffer_prob[i], "\t", filtered_queries[i])
+					#print("------")
+					#print(epoch_str, dialog_id, filtered_queries[sample])
+					#print("===============")
+					
 					'''
 					max_prob = 0
 					max_index = 0
@@ -605,6 +624,16 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				batched_actions_and_rewards[0].add_entry(
 					(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([reward]))
 				total_repeated_rewards += reward
+			
+			adjusted_reward = reward
+			if reward > 0:
+				adjusted_reward = reward
+			else:
+				adjusted_reward = -0.1
+
+			batched_actions_and_rewards[1].add_entry(
+				(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([adjusted_reward]))
+
 			if use_gold==False:
 				batched_db_results.append(formatted_results)
 		
@@ -708,7 +737,7 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				print("PREDICT:",action_surface_form, reward)
 				print("---------------------------------")
 			'''	
-		elif mode == "MAPO":
+		elif mode == "MAPO" or mode == "MAPOUR":
 
 			# number of samples outside the buffer
 			K = total_width - queries_added
@@ -775,17 +804,21 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 
 				if action_surface_form in filtered_queries:
 					continue
-
+				
 				# add on policy samples for mapo: outside the buffer
 				batched_actions_and_rewards[queries_added].add_entry(
 						np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)*one_minus_mapo_pi_b]))
-
+				#print(action_surface_form)
 				queries_added +=1
 			
+			# no queries in the buffer - harcoded condition (clean this up)
+			
 			if queries_added == 1:
+
 				batched_actions_and_rewards[queries_added].add_entry(
 					np.array(high_probable_action[:max_api_length] + [0]*pad), np.array(action_emb_lookup[:max_api_length] + [0]*pad_e), np.array([action_size]), np.array([float(reward)*one_minus_mapo_pi_b]))
 				queries_added +=1
+			#print("-----------")
 				
 		## MIL
 		else:
@@ -868,6 +901,8 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 				pred_action_length = pred_action_lengths[batch_index][beam_index]
 			
 			high_probable_action, action_surface_form, action_emb_lookup, action_size, reward, formatted_results, pad, pad_e, is_valid_query = process_action_beam(action_beams[batch_index][0], pred_action_length, args, glob, rl_oov_words, batch_index, total_rl_words, max_api_length, db_engine, next_entities_in_dialog)
+			#print(action_surface_form)
+			#print("----------")
 			
 			'''
 			if beam_index == 0:
@@ -912,8 +947,10 @@ def calculate_reward(glob, action_beams, pred_action_lengths, batch, rlData, db_
 					else:
 						adjusted_reward = ((float(reward)-highest_reward)/highest_reward)*one_minus_hybrid_pi_b
 				elif mode == "HYBRIDCA":
+					print(reward)
 					highest_reward = ActionsAndRewards.MIL_Cache[cache_key_prefix]
 					adjusted_reward = (float(reward)-highest_reward)*one_minus_hybrid_pi_b
+					print(highest_reward, float(reward)-highest_reward, one_minus_hybrid_pi_b)
 				elif mode == "HYBRIDUR":
 					if highest_reward == 0:
 						adjusted_reward = 0

@@ -257,7 +257,7 @@ def parse_api_file(filepath, db_engine, use_gold):
                 pred = line.replace("pred : ", "").strip() 
                 query = ""
                 if use_gold:
-                    query = gold
+                    query = db_engine.convert_gold_query_to_suitable_grammar(gold)
                 else:
                     query = pred
                 select_fields, db_results, result_entities_set = db_engine.execute(query)

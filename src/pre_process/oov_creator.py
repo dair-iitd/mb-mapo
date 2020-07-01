@@ -89,8 +89,8 @@ def modify_dialog_json(dialog):
 if __name__ == "__main__":
     
     taskids = [7,6]
-    folder = "data-sql"
-    #folder = "data-heuristic-predicted"
+    #folder = "data-sql"
+    folder = "data-predicted"
     
     for taskid in taskids:
         
@@ -109,7 +109,7 @@ if __name__ == "__main__":
             if folder == "data" or folder == "data-sql":
                 json_file = input_folder+'task6/dialog-babi-task6-dstc2-tst.json'
             else:
-                json_file = input_folder+'task6/dialog-babi-task6-dstc2-filtered-tst-modified.json'
+                json_file = input_folder+'task6/dialog-babi-task6-dstc2-tst-modified.json'
             kb_file = input_folder+'dialog-dstc2-kb-all.txt'
 
         dbEngine = DbEngine(kb_file, "R_name")
